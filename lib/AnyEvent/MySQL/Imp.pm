@@ -11,6 +11,8 @@ use List::Util qw(reduce);
 use Scalar::Util qw(dualvar);
 use Combinator;
 
+use feature qw(switch);
+
 use constant {
     DEV => 1,
 };
@@ -69,9 +71,66 @@ use constant {
 };
 
 use constant {
+    MYSQL_TYPE_BIT                  => 16,
+    MYSQL_TYPE_BLOB                 => 252,
+    MYSQL_TYPE_DATE                 => 10,
+    MYSQL_TYPE_DATETIME             => 12,
+    MYSQL_TYPE_DECIMAL              => 0,
+    MYSQL_TYPE_DOUBLE               => 5,
+    MYSQL_TYPE_ENUM                 => 247,
+    MYSQL_TYPE_FLOAT                => 4,
+    MYSQL_TYPE_GEOMETRY             => 255,
+    MYSQL_TYPE_INT24                => 9,
+    MYSQL_TYPE_LONG                 => 3,
+    MYSQL_TYPE_LONGLONG             => 8,
+    MYSQL_TYPE_LONG_BLOB            => 251,
+    MYSQL_TYPE_MEDIUM_BLOB          => 250,
+    MYSQL_TYPE_NEWDATE              => 14,
+    MYSQL_TYPE_NEWDECIMAL           => 246,
+    MYSQL_TYPE_NULL                 => 6,
+    MYSQL_TYPE_SET                  => 248,
+    MYSQL_TYPE_SHORT                => 2,
+    MYSQL_TYPE_STRING               => 254,
+    MYSQL_TYPE_TIME                 => 11,
+    MYSQL_TYPE_TIMESTAMP            => 7,
+    MYSQL_TYPE_TINY                 => 1,
+    MYSQL_TYPE_TINY_BLOB            => 249,
+    MYSQL_TYPE_VARCHAR              => 15,
+    MYSQL_TYPE_VAR_STRING           => 253,
+    MYSQL_TYPE_YEAR                 => 13,
+};
+
+use constant {
+    NOT_NULL_FLAG           => 1,                 # Field can't be NULL
+    PRI_KEY_FLAG            => 2,                 # Field is part of a primary key
+    UNIQUE_KEY_FLAG         => 4,                 # Field is part of a unique key
+    MULTIPLE_KEY_FLAG       => 8,                 # Field is part of a key
+    BLOB_FLAG               => 16,                # Field is a blob
+    UNSIGNED_FLAG           => 32,                # Field is unsigned
+    ZEROFILL_FLAG           => 64,                # Field is zerofill
+    BINARY_FLAG             => 128,               # Field is binary
+    ENUM_FLAG               => 256,               # Field is an enum
+    AUTO_INCREMENT_FLAG     => 512,               # Field is a autoincrement field
+    TIMESTAMP_FLAG          => 1024,              # Field is a timestamp
+    SET_FLAG                => 2048,              # Field is a set
+    NO_DEFAULT_VALUE_FLAG   => 4096,              # Field doesn't have default value
+    ON_UPDATE_NOW_FLAG      => 8192,              # Field is set to NOW on UPDATE
+    NUM_FLAG                => 32768,             # Field is num (for clients)
+    PART_KEY_FLAG           => 16384,             # Intern; Part of some key
+    GROUP_FLAG              => 32768,             # Intern: Group field
+    UNIQUE_FLAG             => 65536,             # Intern: Used by sql_yacc
+    BINCMP_FLAG             => 131072,            # Intern: Used by sql_yacc
+    GET_FIXED_FIELDS_FLAG   => (1<<18),           # Used to get fields in item tree
+    FIELD_IN_PART_FUNC_FLAG => (1<<19),           # Field part of partition func
+    FIELD_IN_ADD_INDEX      => (1<<20),           # Intern: Field used in ADD INDEX
+    FIELD_IS_RENAMED        => (1<<21),           # Intern: Field is being renamed
+};
+
+use constant {
     RES_OK => 0,
     RES_ERROR => 255,
     RES_RESULT => 1,
+    RES_PREPARE => 2,
 };
 
 # $str = take_zstring($data(modified)) - null terminated string
@@ -126,6 +185,219 @@ sub take_str {
 sub take_filler {
     substr($_[0], 0, $_[1], '');
     return ();
+}
+
+# $cell = take_type($data(modified), $type, $length, $flag)
+sub take_type {
+    given($_[1]) {
+        when(MYSQL_TYPE_TINY) { # tinyint
+            if( $_[3] & UNSIGNED_FLAG ) {
+                return ord(substr($_[0], 0, 1, ''));
+            }
+            else {
+                return unpack('c', substr($_[0], 0, 1, ''));
+            }
+        }
+        when(MYSQL_TYPE_SHORT) { # smallint
+            if( $_[3] & UNSIGNED_FLAG ) {
+                return unpack('v', substr($_[0], 0, 2, ''));
+            }
+            else {
+                return unpack('s<', substr($_[0], 0, 2, ''));
+            }
+        }
+        when(MYSQL_TYPE_INT24) { # mediumint
+            if( $_[3] & UNSIGNED_FLAG ) {
+                return unpack('V', substr($_[0], 0, 3, '')."\0");
+            }
+            else {
+                return unpack('l<', substr($_[0], 0, 3, '')."\0");
+            }
+        }
+        when(MYSQL_TYPE_LONG) { # int
+            if( $_[3] & UNSIGNED_FLAG ) {
+                return unpack('V', substr($_[0], 0, 4, ''));
+            }
+            else {
+                return unpack('l<', substr($_[0], 0, 4, ''));
+            }
+        }
+        when(MYSQL_TYPE_LONGLONG) { # bigint
+            if( $_[3] & UNSIGNED_FLAG ) {
+                return unpack('Q<', substr($_[0], 0, 8, ''));
+            }
+            else {
+                return unpack('q<', substr($_[0], 0, 8, ''));
+            }
+        }
+        when(MYSQL_TYPE_FLOAT) { # float
+            return unpack('f<', substr($_[0], 0, 4, ''));
+        }
+        when(MYSQL_TYPE_DOUBLE) { # double
+            return unpack('d<', substr($_[0], 0, 8, ''));
+        }
+        when(MYSQL_TYPE_NEWDECIMAL) { # decimal, numeric
+            warn "Not implement DECIMAL,NUMERIC yet";
+            return;
+        }
+        when(MYSQL_TYPE_BIT) { # bit(n)
+            warn "Not implement BIT yet";
+            return;
+        }
+        when(MYSQL_TYPE_DATE) { # date
+            warn "Not implement DATE yet";
+            return;
+        }
+        when(MYSQL_TYPE_TIME) { # time
+            warn "Not implement TIME yet";
+            return;
+        }
+        when(MYSQL_TYPE_DATETIME) { # datetime
+            warn "Not implement DATETIME yet";
+            return;
+        }
+        when(MYSQL_TYPE_TIMESTAMP) { # timestamp
+            warn "Not implement TIMESTAMP yet";
+            return;
+        }
+        when(MYSQL_TYPE_YEAR) { # year
+            return 1901+ord(substr($_[0], 0, 1, ''));
+        }
+        when(MYSQL_TYPE_STRING) { # char(n), binary(n), enum(), set()
+            if( $_[3] & ENUM_FLAG ) {
+                warn "Not implement ENUM yet";
+                return;
+            }
+            elsif( $_[3] & SET_FLAG ) {
+                warn "Not implement SET yet";
+                return;
+            }
+            else {
+                my $data = substr($_[0], 0, $_[2], '');
+                $data =~ s/ +$//;
+                return $data;
+            }
+        }
+        when([MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_BLOB]) { # varchar(n), varbinary(n) | tinyblob, tinytext, blob, text, mediumblob, mediumtext, longblob, longtext
+            my $len;
+            if( $_[2]<=0xFF ) {
+                $len = ord(substr($_[0], 0, 1, ''));
+            }
+            elsif( $_[2]<=0xFFFF ) {
+                $len = unpack('v', substr($_[0], 0, 2, ''));
+            }
+            elsif( $_[2]<=0xFFFFFF ) {
+                $len = unpack('V', substr($_[0], 0, 3, '')."\0");
+            }
+            else {
+                $len = unpack('V', substr($_[0], 0, 4, ''));
+            }
+            return substr($_[0], 0, $len, '');
+        }
+        default {
+            warn "Unsupported type: $_[1]";
+            return;
+        }
+    }
+}
+
+# put_type($data(modified), $cell, $type, $len, $flag)
+sub put_type {
+    given($_[2]) {
+        when(MYSQL_TYPE_TINY) { # tinyint
+            if( $_[4] & UNSIGNED_FLAG ) {
+                $_[0] .= chr($_[1]);
+            }
+            else {
+                $_[0] .= pack('c', $_[1]);
+            }
+        }
+        when(MYSQL_TYPE_SHORT) { # smallint
+            $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'v' : 's<' , $_[1]);
+        }
+        when(MYSQL_TYPE_INT24) { # mediumint
+            $_[0] .= substr(pack( $_[4] & UNSIGNED_FLAG ? 'V' : 'l<' , $_[1]), 0, 3);
+        }
+        when(MYSQL_TYPE_LONG) { # int
+            $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'V' : 'l<' , $_[1] );
+        }
+        when(MYSQL_TYPE_LONGLONG) { # bigint
+            $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'Q<' : 'q<' , $_[1] );
+        }
+        when(MYSQL_TYPE_FLOAT) { # float
+            $_[0] .= pack('f<', $_[1]);
+        }
+        when(MYSQL_TYPE_DOUBLE) { # double
+            $_[0] .= pack('d<', $_[1]);
+        }
+        when(MYSQL_TYPE_NEWDECIMAL) { # decimal, numeric
+            warn "Not implement DECIMAL,NUMERIC yet";
+            return;
+        }
+        when(MYSQL_TYPE_BIT) { # bit(n)
+            warn "Not implement BIT yet";
+            return;
+        }
+        when(MYSQL_TYPE_DATE) { # date
+            warn "Not implement DATE yet";
+            return;
+        }
+        when(MYSQL_TYPE_TIME) { # time
+            warn "Not implement TIME yet";
+            return;
+        }
+        when(MYSQL_TYPE_DATETIME) { # datetime
+            warn "Not implement DATETIME yet";
+            return;
+        }
+        when(MYSQL_TYPE_TIMESTAMP) { # timestamp
+            warn "Not implement TIMESTAMP yet";
+            return;
+        }
+        when(MYSQL_TYPE_YEAR) { # year
+            $_[0] .= chr($_[1]-1901);
+        }
+        when(MYSQL_TYPE_STRING) { # char(n), binary(n), enum(), set()
+            if( $_[4] & ENUM_FLAG ) {
+                warn "Not implement ENUM yet";
+                return;
+            }
+            elsif( $_[4] & SET_FLAG ) {
+                warn "Not implement SET yet";
+                return;
+            }
+            else {
+                if( length($_[1]) >= $_[3] ) {
+                    $_[0] .= substr($_[1], 0, $_[3]);
+                }
+                else {
+                    $_[0] .= $_[1];
+                    $_[0] .= ' ' x ($_[3] - length $_[1]);
+                }
+            }
+        }
+        when([MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_BLOB]) { # varchar(n), varbinary(n) | tinyblob, tinytext, blob, text, mediumblob, mediumtext, longblob, longtext
+            my $len;
+            $_[1] = substr($_[1], 0, $_[3]) if( length($_[1]) > $_[3] );
+            if( $_[3]<=0xFF ) {
+                $_[0] .= chr(length($_[1]));
+            }
+            elsif( $_[3]<=0xFFFF ) {
+                $_[0] .= pack('v', length($_[1]));
+            }
+            elsif( $_[3]<=0xFFFFFF ) {
+                $_[0] .= substr(pack('V', length($_[1])), 0, 3);
+            }
+            else {
+                $_[0] .= pack('V', length($_[1]));
+            }
+            $_[0] .= $_[1];
+        }
+        default {
+            warn "Unsupported type: $_[1]";
+            return;
+        }
+    }
 }
 
 # put_num($data(modified), $num, $len)
@@ -256,18 +528,43 @@ sub send_packet {
     $_[0]->push_write(substr(pack('V', $len), 0, 3));
     $_[0]->push_write(chr($_[1]));
     $_[0]->push_write($_) for @_[2..$#_];
-#    $_[0]->push_write(substr(pack('V', $len), 0, 3).chr($_[1]).join('',@_[2..$#_]));
 }
 
-# recv_response($hd, [$binary_format,] $cb->(TYPE, data...))
+# _recv_field($hd, \@field)
+sub _recv_field {
+    warn "get field." if DEV;
+    my $field = $_[1];
+    recv_packet($_[0], sub {
+        warn "got field!" if DEV;
+        push @$field, [
+            take_lcs($_[0]), take_lcs($_[0]), take_lcs($_[0]),
+            take_lcs($_[0]), take_lcs($_[0]), take_lcs($_[0]),
+            take_filler($_[0], 1),
+            take_num($_[0], 2),
+            take_num($_[0], 4),
+            take_num($_[0], 1),
+            take_num($_[0], 2),
+            take_num($_[0], 1),
+            take_filler($_[0], 2),
+            take_lcb($_[0]),
+        ];
+    });
+}
+
+# recv_response($hd, %opt, $cb->(TYPE, data...))
 #  RES_OK, $affected_rows, $insert_id, $server_status, $warning_count, $message
 #  RES_ERROR, $errno, $sqlstate, $message
-#  RES_RESULT, \@fields, \@rows
-#   $fields[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
-#   $rows[$i] = [$field, $field, $field, ...]
+#  RES_RESULT, \@field, \@row
+#   $field[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
+#   $row[$i] = [$field, $field, $field, ...]
+#  RES_PREPARE, $stmt_id, \@column, \@param, $warning_count
+#   $param[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
+#   $column[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
+# opt:
+#  prepare (set to truthy to recv prepare_ok)
 sub recv_response {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : sub {};
-    my($hd, $binary_format) = @_;
+    my($hd, %opt) = @_;
 
     if( DEV ) {
         my $cb0 = $cb;
@@ -278,21 +575,54 @@ sub recv_response {
         };
     }
 
-    warn;
     recv_packet($hd, sub {
-        warn;
         my $head = substr($_[0], 0, 1);
-        warn "packet_head=".ord($head);
         if( $head eq "\x00" ) { # OK
             substr($_[0], 0, 1, '');
-            $cb->(
-                RES_OK,
-                take_lcb($_[0]),
-                take_lcb($_[0]),
-                take_num($_[0], 2),
-                take_num($_[0], 2),
-                $_[0],
-            );
+            if( $opt{prepare} ) {
+                my $stmt_id = take_num($_[0], 4);
+                my $column_count = take_num($_[0], 2);
+                my $param_count = take_num($_[0], 2);
+                take_filler($_[0], 1);
+                my $warning_count = take_num($_[0], 2);
+                warn "stmt_id=$stmt_id, column_count=$column_count, param_count=$param_count, warning_count=$warning_count" if DEV;
+
+                my(@param, @column);
+
+                my $end_cv = AE::cv {
+                    $cb->(RES_PREPARE, $stmt_id, \@param, \@column, $warning_count);
+                };
+
+                $end_cv->begin;
+
+                if( $param_count ) {
+                    $end_cv->begin;
+                    for(my $i=0; $i<$param_count; ++$i) {
+                        _recv_field($hd, \@param);
+                    }
+                    recv_packet($hd, sub { $end_cv->end }); # EOF
+                }
+
+                if( $column_count ) {
+                    $end_cv->begin;
+                    for(my $i=0; $i<$column_count; ++$i) {
+                        _recv_field($hd, \@column);
+                    }
+                    recv_packet($hd, sub { $end_cv->end }); # EOF
+                }
+
+                $end_cv->end;
+            }
+            else {
+                $cb->(
+                    RES_OK,
+                    take_lcb($_[0]),
+                    take_lcb($_[0]),
+                    take_num($_[0], 2),
+                    take_num($_[0], 2),
+                    $_[0],
+                );
+            }
         }
         elsif( $head eq "\xFF" ) { # Error
             substr($_[0], 0, 1, '');
@@ -309,35 +639,20 @@ sub recv_response {
             my $field_count = take_lcb($_[0]);
             my $extra = $_[0] eq '' ? undef : take_lcb($_[0]);
 
-            warn "field_count=$field_count";
+            warn "field_count=$field_count" if DEV;
 
             my @field;
             for(my $i=0; $i<$field_count; ++$i) {
-                warn "get field.";
-                recv_packet($hd, sub {
-                    warn "got field!";
-                    push @field, [
-                        take_lcs($_[0]), take_lcs($_[0]), take_lcs($_[0]),
-                        take_lcs($_[0]), take_lcs($_[0]), take_lcs($_[0]),
-                        take_filler($_[0], 1),
-                        take_num($_[0], 2),
-                        take_num($_[0], 4),
-                        take_num($_[0], 1),
-                        take_num($_[0], 2),
-                        take_num($_[0], 1),
-                        take_filler($_[0], 2),
-                        take_lcb($_[0]),
-                    ];
-                });
+                _recv_field($hd, \@field);
             }
-            recv_packet($hd, sub{ warn "got EOF" }); # EOF
+            recv_packet($hd, sub{ warn "got EOF" if DEV }); # EOF
 
             my @row;
             my $fetch_row; $fetch_row = sub { # text format
-                warn "get row.";
+                warn "get row." if DEV;
                 recv_packet($hd, sub {
-                    warn "got row!";
                     if( substr($_[0], 0, 1) eq "\xFE" ) { # EOF
+                        warn "got EOF!" if DEV;
                         undef $fetch_row;
                         $cb->(
                             RES_RESULT,
@@ -346,6 +661,7 @@ sub recv_response {
                         );
                     }
                     else {
+                        warn "got row!" if DEV;
                         my @cell;
                         for(my $i=0; $i<$field_count; ++$i) {
                             push @cell, take_lcs($_[0]);
@@ -422,7 +738,7 @@ sub do_auth {
         ), 4); # client_flags
         put_num($packet, 0x1000000, 4); # max_packet_size
         $packet .= $server_lang; # charset_number
-        $packet .= "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"; # filler
+        $packet .= "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"; # filler
         put_zstr($packet, $username); # username
         if( $password eq '' ) {
             put_lcs($packet, '');
@@ -445,11 +761,6 @@ sub do_auth {
             }
         });
     });
-}
-
-# do_query($hd, $sql)
-sub do_query {
-    send_packet($_[0], 0, COM_QUERY, $_[1]);
 }
 
 1;

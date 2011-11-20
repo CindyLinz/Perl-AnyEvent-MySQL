@@ -10,24 +10,48 @@ use AnyEvent::MySQL;
 my $end = AE::cv;
 
 my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=3306", "ptest", "pass", sub {
-    my($dbh, $res) = @_;
-    if( $res ) {
+    my($dbh) = @_;
+    if( $dbh ) {
         warn "Connect success!";
-        $dbh->do("select * from t1", sub {
-            if( $#_ ) {
-                warn "Do success: $_[1]";
-            }
-            else {
-                warn "Do fail: $@ (@{[0+$@]})";
-            }
-            $end->send;
-        });
     }
     else {
-        warn "Connect fail: $@ (@{[0+$@]})";
+        warn "Connect fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::errno)";
         $end->send;
     }
 });
+
+$dbh->do("select * from t1", sub {
+    my $rv = shift;
+    if( defined($rv) ) {
+        warn "Do success: $_[1]";
+    }
+    else {
+        warn "Do fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::errno)";
+    }
+    $end->send;
+});
+
+$end->recv;
+my $end2 = AE::cv;
+
+#$dbh->prepare("update t1 set a=1 where b=1", sub {
+#$dbh->prepare("select * from t1", sub {
+my $sth = $dbh->prepare("select * from t1 where a>?", sub {
+#$dbh->prepare("select * from type_all", sub {
+    warn "prepared!";
+    $end2->send;
+});
+
+$end2->recv;
+
+my $end3 = AE::cv;
+
+$sth->execute(1, sub {
+    warn "executed!";
+    $end3->send;
+});
+
+$end3->recv;
 
 #tcp_connect 0, 3306, sub {
 #    my $fh = shift;

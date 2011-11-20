@@ -394,7 +394,7 @@ sub put_type {
             $_[0] .= $_[1];
         }
         default {
-            warn "Unsupported type: $_[1]";
+            warn "Unsupported type: $_[2]";
             return;
         }
     }
@@ -663,8 +663,22 @@ sub recv_response {
                     else {
                         warn "got row!" if DEV;
                         my @cell;
-                        for(my $i=0; $i<$field_count; ++$i) {
-                            push @cell, take_lcs($_[0]);
+                        if( $opt{prepare} ) {
+                            take_filler($_[0], 1);
+                            my $null_bit_map = substr($_[0], 0, $field_count + 9 >> 3, '');
+                            for(my $i=0; $i<$field_count; ++$i) {
+                                if( vec($null_bit_map, 2+$i, 1) ) {
+                                    push @cell, undef;
+                                }
+                                else {
+                                    push @cell, take_type($_[0], $field[$i][8], $field[$i][7], $field[$i][9]);
+                                }
+                            }
+                        }
+                        else {
+                            for(my $i=0; $i<$field_count; ++$i) {
+                                push @cell, take_lcs($_[0]);
+                            }
                         }
                         push @row, \@cell;
                         $fetch_row->();
@@ -761,6 +775,52 @@ sub do_auth {
             }
         });
     });
+}
+
+# do_reset_stmt($hd, $stmt_id)
+sub do_reset_stmt {
+    my $packet = '';
+    put_num($packet, $_[1], 4);
+    send_packet($_[0], 0, COM_STMT_RESET, $packet);
+}
+
+# do_long_data_packet($hd, $stmt_id, $param_num, $type, $data, $len, $flag, $packet_num)
+sub do_long_data_packet {
+    my $packet = '';
+    put_num($packet, $_[1], 4);
+    put_num($packet, $_[2], 2);
+    put_num($packet, $_[3], 2);
+    put_type($packet, $_[4], $_[3], $_[5], $_[6]);
+    send_packet($_[0], $_[7], COM_STMT_SEND_LONG_DATA, $packet);
+}
+
+# do_execute($hd, $stmt_id, $null_bit_map, $packet_num)
+sub do_execute {
+    my $packet = '';
+    put_num($packet, $_[1], 4);
+    $packet .= "\0\1\0\0\0";
+    $packet .= $_[2];
+    $packet .= "\0";
+    send_packet($_[0], $_[3], COM_STMT_EXECUTE, $packet);
+}
+
+# do_execute_param($hd, $stmt_id, \@param, \@param_config)
+sub do_execute_param {
+    my $null_bit_map = pack('b*', join '', map { defined($_) ? '0' : '1' } @{$_[2]});
+    my $packet = '';
+    put_num($packet, $_[1], 4);
+    $packet .= "\0\1\0\0\0";
+    $packet .= $null_bit_map;
+    $packet .= "\1";
+    for(my $i=0; $i<@{$_[2]}; ++$i) {
+        put_num($packet, $_[3][$i][8], 2);
+    }
+    for(my $i=0; $i<@{$_[2]}; ++$i) {
+        if( defined($_[2][$i]) ) {
+            put_type($packet, $_[2][$i], $_[3][$i][8], $_[3][$i][7], $_[3][$i][9]);
+        }
+    }
+    send_packet($_[0], 0, COM_STMT_EXECUTE, $packet);
 }
 
 1;

@@ -557,7 +557,7 @@ sub _recv_field {
 #  RES_RESULT, \@field, \@row
 #   $field[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
 #   $row[$i] = [$field, $field, $field, ...]
-#  RES_PREPARE, $stmt_id, \@column, \@param, $warning_count
+#  RES_PREPARE, $stmt_id, \@param, \@column, $warning_count
 #   $param[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
 #   $column[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
 # opt:

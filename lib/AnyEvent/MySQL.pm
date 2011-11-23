@@ -363,6 +363,39 @@ sub selectall_hashref {
     }, $cb);
 }
 
+=head2 $dbh->selectcol_arrayref($statement, [\%attr,], $cb->($ary_ref))
+
+=cut
+sub selectcol_arrayref {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my($dbh, $statement, $attr) = @_;
+    $attr ||= {};
+    my @columns = map { $_-1 } @{ $attr->{Columns} || [1] };
+
+    _check_and_act($dbh, sub {
+        my $next_act = shift;
+        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
+        AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $cb->($_[1]);
+            }
+            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                local $errno = $_[1];
+                local $errstr = $_[3];
+                $cb->();
+            }
+            else {
+                my @res = map {
+                    my $r = $_;
+                    map { $r->[$_] } @columns
+                } @{$_[2]};
+                $cb->(\@res);
+            }
+            $next_act->();
+        });
+    }, $cb);
+}
+
 =head2 $sth = $dbh->prepare($statement, [$cb->($sth)])
 
 =cut

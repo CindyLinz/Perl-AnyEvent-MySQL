@@ -161,6 +161,11 @@ $dbh->selectall_hashref("select a*2, b from t1", 'b', 'a*2', sub {
 $dbh->selectall_hashref("select a*2, b from t1", sub {
     warn "selectall_hashref";
     warn Dumper($_[0]);
+});
+
+$dbh->selectcol_arrayref("select a*2, b from t1", { Columns => [1,2,1] }, sub {
+    warn "selectcol_arrayref";
+    warn Dumper($_[0]);
     $end5->send;
 });
 

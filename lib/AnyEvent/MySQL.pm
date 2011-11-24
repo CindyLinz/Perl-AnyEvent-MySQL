@@ -81,6 +81,7 @@ use constant {
     STATEi => 5,
     TASKi => 6,
     STi => 7,
+    TXi => 8,
 };
 
 *errstr = *AnyEvent::MySQL::errstr;
@@ -100,7 +101,8 @@ sub _warn_when_verbose {
 sub _consume_task {
     my $dbh = shift;
     my $loop_sub; $loop_sub = sub {
-        if( my $task = shift @{$dbh->[TASKi]} ) {
+        my $queue = $dbh->[TASKi]{$dbh->[TXi][0]} || [];
+        if( my $task = shift @$queue ) {
             $dbh->[STATEi] = AnyEvent::MySQL::BUSY;
             $task->[0]($loop_sub);
         }
@@ -112,17 +114,18 @@ sub _consume_task {
 }
 
 sub _check_and_act {
-    my($dbh, $act, $cb) = @_;
+    my($dbh, $act, $cb, $tx) = @_;
+    $tx = 0+$tx;
     if( $dbh->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
         local $errno = 2006;
         local $errstr = 'MySQL server has gone away';
         $cb->();
     }
     elsif( $dbh->[STATEi]==AnyEvent::MySQL::BUSY ) {
-        push @{$dbh->[TASKi]}, [$act, $cb];
+        push @{$dbh->[TASKi]{$tx} ||= []}, [$act, $cb];
     }
     elsif( $dbh->[STATEi]==AnyEvent::MySQL::IDLE ) {
-        push @{$dbh->[TASKi]}, [$act, $cb];
+        push @{$dbh->[TASKi]{$tx} ||= []}, [$act, $cb];
         _consume_task($dbh);
     }
     else {
@@ -174,6 +177,7 @@ sub new {
     $dbh->[STATEi] = AnyEvent::MySQL::BUSY;
     $dbh->[TASKi] = [];
     $dbh->[STi] = [];
+    $dbh->[TXi] = [];
 
     if( $dsn =~ /^DBI:mysql:(.*)$/ ) {
         my $param = $1;
@@ -413,6 +417,77 @@ sub prepare {
     }
 }
 
+=head2 $txh = $dbh->begin_work([$cb->($txh)])
+
+=cut
+sub begin_work {
+    my $dbh = $_[0];
+
+    if( $dbh->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
+        return AnyEvent::MySQL::st->new_zombie_db(@_);
+    }
+    else {
+        my $txh = AnyEvent::MySQL::tx->new(@_);
+        push @{$dbh->[TXi]}, $txh;
+        weaken($dbh->[TXi][-1]);
+        return $txh;
+    }
+}
+
+package AnyEvent::MySQL::tx;
+
+use strict;
+use warnings;
+
+use constant {
+    DBHi => 0,
+    STATEi => 1,
+    TASKi => 2,
+};
+
+=head2 $txh = AnyEvent::MySQL::tx->new($dbh, [$cb->($rv)])
+
+=cut
+sub new {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my($class, $dbh) = @_;
+    my $txh = bless [], $class;
+    $txh->[DBHi] = $dbh;
+    $txh->[STATEi] = AnyEvent::MySQL::BUSY;
+    $txh->[TASKi] = [];
+
+    AnyEvent::MySQL::db::_check_and_act($dbh, sub {
+        my $next_act = shift;
+        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, 'begin');
+        AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $cb->($txh);
+            }
+            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                local $errno = $_[1];
+                local $errstr = $_[3];
+                $cb->();
+            }
+            else {
+                local $errno = 2000;
+                local $errstr = "Unexpected result: $_[0]";
+                $cb->();
+            }
+            $next_act->();
+        });
+    }, $cb, $txh);
+
+    return $txh;
+}
+
+sub DESTROY {
+    my $txh = shift;
+    if( $txh->[STATEi]==AnyEvent::MySQL::IDLE ) {
+        AnyEvent::MySQL::db::_check_and_act($dbh, sub {
+        }, $cb, $txh);
+    }
+}
+
 package AnyEvent::MySQL::st;
 
 use strict;
@@ -456,7 +531,7 @@ sub _check_and_act {
         _consume_task($sth);
     }
     elsif( $sth->[STATEi]==AnyEvent::MySQL::BUSY ) {
-        push @{$sth->[TASKi]}, [$act, $cb];
+        push $sth->[TASKi], [$act, $cb];
     }
     elsif( $sth->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
         local $errno = 2030;
@@ -540,7 +615,6 @@ sub new {
         my $hd = $dbh->[AnyEvent::MySQL::db::HDi];
         AnyEvent::MySQL::Imp::send_packet($hd, 0, AnyEvent::MySQL::Imp::COM_STMT_PREPARE, $statement);
         AnyEvent::MySQL::Imp::recv_response($hd, prepare => 1, sub {
-            $next_act->();
             if( $_[0]==AnyEvent::MySQL::Imp::RES_PREPARE ) {
                 $sth->[IDi] = $_[1];
                 $sth->[PARAMi] = $_[2];
@@ -562,6 +636,7 @@ sub new {
                 }
                 _zombie_flush($sth);
             }
+            $next_act->();
         });
     }, $cb);
 

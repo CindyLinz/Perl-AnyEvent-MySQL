@@ -45,11 +45,12 @@ use Scalar::Util qw(weaken dualvar);
 use AnyEvent::MySQL::Imp;
 
 use constant {
-    BUSY => 0,
-    IDLE => 1,
-    ZOMBIE => 2,
-    ZOMBIE_DB => 3,
-    ZOMBIE_ST => 4,
+    BUSY => 1,
+    IDLE => 2,
+    ZOMBIE => 3,
+    ZOMBIE_DB => 4,
+    ZOMBIE_ST => 5,
+    DONE => 6,
 };
 
 sub _empty_cb {}
@@ -73,6 +74,12 @@ use AnyEvent::Handle;
 use Scalar::Util qw(weaken dualvar);
 
 use constant {
+    BUSY => 1,
+    IDLE => 2,
+    ZOMBIE => 3,
+};
+
+use constant {
     DSNi => 0,
     USERNAMEi => 1,
     AUTHi => 2,
@@ -81,7 +88,7 @@ use constant {
     STATEi => 5,
     TASKi => 6,
     STi => 7,
-    TXi => 8,
+    RENEWi => 8,
 };
 
 *errstr = *AnyEvent::MySQL::errstr;
@@ -101,46 +108,46 @@ sub _warn_when_verbose {
 sub _consume_task {
     my $dbh = shift;
     my $loop_sub; $loop_sub = sub {
-        my $queue = $dbh->[TASKi]{$dbh->[TXi][0]} || [];
-        if( my $task = shift @$queue ) {
-            $dbh->[STATEi] = AnyEvent::MySQL::BUSY;
+        shift @{$dbh->[STi]} while( @{$dbh->[STi]} && !$dbh->[STi][0] );
+        pop @{$dbh->[STi]} while( @{$dbh->[STi]} && !$dbh->[STi][-1] );
+        if( $dbh->[RENEWi] ) {
+            undef $loop_sub;
+            _reconnect($dbh);
+            return;
+        }
+        if( $dbh->[STATEi]==ZOMBIE ) {
+            undef $loop_sub;
+            _zombie_flush($dbh);
+            return;
+        }
+        if( my $task = shift @{$dbh->[TASKi]} ) {
+            $dbh->[STATEi] = BUSY;
             $task->[0]($loop_sub);
         }
         else {
-            $dbh->[STATEi] = AnyEvent::MySQL::IDLE;
+            $dbh->[STATEi] = IDLE;
             undef $loop_sub;
         }
     }; $loop_sub->();
 }
 
 sub _check_and_act {
-    my($dbh, $act, $cb, $tx) = @_;
-    $tx = 0+$tx;
-    if( $dbh->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
+    my($dbh, $act, $cb) = @_;
+    if( $dbh->[STATEi]==ZOMBIE ) {
         local $errno = 2006;
         local $errstr = 'MySQL server has gone away';
         $cb->();
+        return;
     }
-    elsif( $dbh->[STATEi]==AnyEvent::MySQL::BUSY ) {
-        push @{$dbh->[TASKi]{$tx} ||= []}, [$act, $cb];
-    }
-    elsif( $dbh->[STATEi]==AnyEvent::MySQL::IDLE ) {
-        push @{$dbh->[TASKi]{$tx} ||= []}, [$act, $cb];
-        _consume_task($dbh);
-    }
-    else {
-        local $errno = 2000;
-        local $errstr = "Unknown state: $dbh->[STATEi]";
-        _warn_when_verbose($dbh, 2);
-        $cb->();
-    }
+    push @{$dbh->[TASKi]}, [$act, $cb];
+    _consume_task($dbh) if( $dbh->[STATEi]==IDLE );
 }
 
 sub _zombie_flush {
     my($dbh) = @_;
-    $dbh->[STATEi] = AnyEvent::MySQL::ZOMBIE;
-#    local $errno = 2006;
-#    local $errstr = 'MySQL server has gone away';
+    $dbh->[STATEi] = ZOMBIE;
+    local $errno = 2006;
+    local $errstr = 'MySQL server has gone away';
 
     my $tasks = $dbh->[TASKi];
     $dbh->[TASKi] = [];
@@ -153,6 +160,110 @@ sub _zombie_flush {
 
     for my $st (@$sts) {
         AnyEvent::MySQL::st::_zombie_parent_flush($st) if $st;
+    }
+}
+
+sub _reconnect {
+    my $dbh = shift;
+    $dbh->[STATEi] = BUSY;
+    $dbh->[RENEWi] = 0;
+    my $retry; $retry = AE::timer .1, 0, sub {
+        undef $retry;
+        _connect($dbh);
+    };
+}
+
+sub _after_connect {
+    my $dbh = shift;
+    $dbh->[STi] = [ grep { $_ } @{$dbh->[STi]} ];
+    weaken $_ for(@{$dbh->[STi]});
+    my $sts = [ @{$dbh->[STi]} ];
+
+    my $prepare_sub; $prepare_sub = sub {
+        shift @$sts while( @$sts && !$sts->[0] );
+        if( @$sts ) {
+            my $st = shift @$sts;
+            AnyEvent::MySQL::st::_prepare($st, $prepare_sub, \&AnyEvent::MySQL::_empty_cb);
+        }
+        else {
+            undef $prepare_sub;
+            _consume_task($dbh);
+        }
+    }; $prepare_sub->();
+}
+
+sub _connect {
+    my $dbh = shift;
+    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
+    if( $dbh->[DSNi] =~ /^DBI:mysql:(.*)$/ ) {
+        my $param = $1;
+        my $database;
+        if( index($param, '=')>=0 ) {
+            $param = {
+                map { split /=/, $_, 2 } split /;/, $param
+            };
+            if( $param->{host} =~ /(.*):(.*)/ ) {
+                $param->{host} = $1;
+                $param->{port} = $2;
+            }
+        }
+        else {
+            $param = { database => $param };
+        }
+
+        $param->{port} ||= 3306;
+
+        if( $param->{host} eq '' || $param->{host} eq 'localhost' ) { # unix socket
+            local $errno = 2054;
+            local $errstr = "unix socket not implement yet";
+            $cb->();
+            _zombie_flush($dbh);
+        }
+        else {
+            tcp_connect($param->{host}, $param->{port}, sub {
+                my $fh = shift;
+                if( !$fh ) {
+                    warn "Connect to $param->{host}:$param->{port} fail: $!  retry later.";
+
+                    _reconnect($dbh);
+                    return;
+                }
+
+                weaken( my $wdbh = $dbh );
+                $dbh->[HDi] = AnyEvent::Handle->new(
+                    fh => $fh,
+                    on_error => sub {
+                        $wdbh->[RENEWi] = 1; 
+                    },
+                );
+
+                AnyEvent::MySQL::Imp::do_auth($dbh->[HDi], $dbh->[USERNAMEi], $dbh->[AUTHi], $param->{database}, sub {
+                    my($success, $err_num_and_msg) = @_;
+                    if( $success ) {
+                        if( $dbh->[ATTRi]{on_connect} ) {
+                            $dbh->[ATTRi]{on_connect}($dbh, sub {
+                                $cb->($dbh);
+                                _after_connect($dbh);
+                            });
+                        }
+                        else {
+                            $cb->($dbh);
+                            _after_connect($dbh);
+                        }
+                    }
+                    else {
+                        warn "MySQL auth error: $err_num_and_msg  retry later.";
+                        _reconnect($dbh);
+                    }
+                });
+            });
+        }
+    }
+    else {
+        local $errno = 2054;
+        local $errstr = "data_source should be begin with 'DBI:mysql:'";
+        $cb->();
+        _zombie_flush($dbh);
     }
 }
 
@@ -174,90 +285,11 @@ sub new {
     $dbh->[USERNAMEi] = $username;
     $dbh->[AUTHi] = $auth;
     $dbh->[ATTRi] = +{ Verbose => 1, %{ $attr || {} } };
-    $dbh->[STATEi] = AnyEvent::MySQL::BUSY;
+    $dbh->[STATEi] = BUSY;
     $dbh->[TASKi] = [];
     $dbh->[STi] = [];
-    $dbh->[TXi] = [];
 
-    if( $dsn =~ /^DBI:mysql:(.*)$/ ) {
-        my $param = $1;
-        my $database;
-        if( index($param, '=')>=0 ) {
-            $param = {
-                map { split /=/, $_, 2 } split /;/, $param
-            };
-            if( $param->{host} =~ /(.*):(.*)/ ) {
-                $param->{host} = $1;
-                $param->{port} = $2;
-            }
-        }
-        else {
-            $param = { database => $param };
-        }
-
-        $param->{port} ||= 3306;
-
-        if( $param->{host} eq '' || $param->{host} eq 'localhost' ) { # unix socket
-            local $errno = 2054;
-            local $errstr = "unix socket not implement yet";
-            $dbh->[STATEi] = AnyEvent::MySQL::ZOMBIE;
-            _warn_when_verbose($dbh);
-            $cb->();
-        }
-        else {
-            tcp_connect($param->{host}, $param->{port}, sub {
-                my $fh = shift;
-                if( !$fh ) {
-                    local $errno = 2003;
-                    local $errstr = "Connect to $param->{host}:$param->{port} fail: $!";
-                    $dbh->[STATEi] = AnyEvent::MySQL::ZOMBIE;
-                    _warn_when_verbose($dbh);
-                    $cb->();
-                    return;
-                }
-
-                weaken( my $wdbh = $dbh );
-                $dbh->[HDi] = AnyEvent::Handle->new(
-                    fh => $fh,
-                    on_error => sub {
-                        $wdbh->[STATEi] = AnyEvent::MySQL::ZOMBIE;
-                    },
-                );
-
-                AnyEvent::MySQL::Imp::do_auth($dbh->[HDi], $username, $auth, $param->{database}, sub {
-                    my($success, $err_num_and_msg) = @_;
-                    if( $success ) {
-                        $dbh->[STATEi] = AnyEvent::MySQL::IDLE;
-
-                        if( $dbh->[ATTRi]{on_connect} ) {
-                            $dbh->[ATTRi]{on_connect}($dbh, sub {
-                                $cb->($dbh);
-                                _consume_task($dbh);
-                            });
-                        }
-                        else {
-                            $cb->($dbh);
-                            _consume_task($dbh);
-                        }
-                    }
-                    else {
-                        local $errno = 2012;
-                        local $errstr = $err_num_and_msg;
-                        _warn_when_verbose($dbh);
-                        $cb->();
-                        _zombie_flush($dbh);
-                    }
-                });
-            });
-        }
-    }
-    else {
-        local $errno = 2054;
-        local $errstr = "data_source should be begin with 'DBI:mysql:'";
-        _warn_when_verbose($dbh);
-        $cb->();
-        _zombie_flush($dbh);
-    }
+    _connect($dbh);
 
     return $dbh;
 }
@@ -269,7 +301,7 @@ sub do {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my($dbh, $statement, $attr, @bind_values) = @_;
 
-    _check_and_act($dbh, sub {
+    my $act = sub {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
@@ -282,26 +314,33 @@ sub do {
                 $cb->();
             }
             else {
-                $cb->(0);
+                $cb->(0+@{$_[2]});
             }
             $next_act->();
         });
-    }, $cb);
+    };
+
+    if( $attr && $attr->{Tx} ) {
+        AnyEvent::MySQL::tx::_check_and_act($attr->{Tx}, $act, $cb);
+    }
+    else {
+        _check_and_act($dbh, $act, $cb);
+    }
 }
 
-=head2 $dbh->selectall_arrayref($statement, $cb->($ary_ref))
+=head2 $dbh->selectall_arrayref($statement, [\%attr,] $cb->($ary_ref))
 
 =cut
 sub selectall_arrayref {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my($dbh, $statement) = @_;
+    my($dbh, $statement, $attr) = @_;
 
-    _check_and_act($dbh, sub {
+    my $act = sub {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $cb->($_[1]);
+                $cb->([]);
             }
             elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
                 local $errno = $_[1];
@@ -313,22 +352,46 @@ sub selectall_arrayref {
             }
             $next_act->();
         });
-    }, $cb);
+    };
+
+    if( $attr && $attr->{Tx} ) {
+        AnyEvent::MySQL::tx::_check_and_act($attr->{Tx}, $act, $cb);
+    }
+    else {
+        _check_and_act($dbh, $act, $cb);
+    }
 }
 
-=head2 $dbh->selectall_hashref($statement, $key_field, $cb->($hash_ref))
+=head2 $dbh->selectall_hashref($statement, ($key_field|\@key_field), [\%attr,] $cb->($hash_ref))
 
 =cut
 sub selectall_hashref {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my($dbh, $statement, @key_field) = @_;
+    my $attr = ref($_[-1]) eq 'HASH' ? pop : {};
+    my($dbh, $statement, $key_field) = @_;
 
-    _check_and_act($dbh, sub {
+    my @key_field;
+    if( ref($key_field) eq 'ARRAY' ) {
+        @key_field = @$key_field;
+    }
+    elsif( defined($key_field) ) {
+        @key_field = ($key_field);
+    }
+    else {
+        @key_field = ();
+    }
+
+    my $act = sub {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $cb->($_[1]);
+                if( @key_field ) {
+                    $cb->({});
+                }
+                else {
+                    $cb->([]);
+                }
             }
             elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
                 local $errno = $_[1];
@@ -364,10 +427,17 @@ sub selectall_hashref {
             }
             $next_act->();
         });
-    }, $cb);
+    };
+
+    if( $attr && $attr->{Tx} ) {
+        AnyEvent::MySQL::tx::_check_and_act($attr->{Tx}, $act, $cb);
+    }
+    else {
+        _check_and_act($dbh, $act, $cb);
+    }
 }
 
-=head2 $dbh->selectcol_arrayref($statement, [\%attr,], $cb->($ary_ref))
+=head2 $dbh->selectcol_arrayref($statement, [\%attr,] $cb->($ary_ref))
 
 =cut
 sub selectcol_arrayref {
@@ -376,12 +446,12 @@ sub selectcol_arrayref {
     $attr ||= {};
     my @columns = map { $_-1 } @{ $attr->{Columns} || [1] };
 
-    _check_and_act($dbh, sub {
+    my $act = sub {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $cb->($_[1]);
+                $cb->([]);
             }
             elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
                 local $errno = $_[1];
@@ -397,7 +467,14 @@ sub selectcol_arrayref {
             }
             $next_act->();
         });
-    }, $cb);
+    };
+
+    if( $attr && $attr->{Tx} ) {
+        AnyEvent::MySQL::tx::_check_and_act($attr->{Tx}, $act, $cb);
+    }
+    else {
+        _check_and_act($dbh, $act, $cb);
+    }
 }
 
 =head2 $sth = $dbh->prepare($statement, [$cb->($sth)])
@@ -406,7 +483,7 @@ sub selectcol_arrayref {
 sub prepare {
     my $dbh = $_[0];
 
-    if( $dbh->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
+    if( $dbh->[STATEi]==ZOMBIE ) {
         return AnyEvent::MySQL::st->new_zombie_db(@_);
     }
     else {
@@ -423,14 +500,11 @@ sub prepare {
 sub begin_work {
     my $dbh = $_[0];
 
-    if( $dbh->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
-        return AnyEvent::MySQL::st->new_zombie_db(@_);
+    if( $dbh->[STATEi]==ZOMBIE ) {
+        return AnyEvent::MySQL::tx->new_zombie_db(@_);
     }
     else {
-        my $txh = AnyEvent::MySQL::tx->new(@_);
-        push @{$dbh->[TXi]}, $txh;
-        weaken($dbh->[TXi][-1]);
-        return $txh;
+        return AnyEvent::MySQL::tx->new(@_);
     }
 }
 
@@ -440,10 +514,81 @@ use strict;
 use warnings;
 
 use constant {
+    BUSY => 1,
+    IDLE => 2,
+    ZOMBIE => 3,
+    DONE => 4,
+    NEW => 5,
+};
+
+use constant {
     DBHi => 0,
     STATEi => 1,
     TASKi => 2,
+    NEXTi => 3,
 };
+
+sub _consume_task {
+    my $txh = shift;
+    my $loop_sub;
+    my $fail_sub = sub {
+        undef $loop_sub;
+        _zombie_flush($txh, $_[0]);
+        delete($txh->[NEXTi])->();
+    };
+    $loop_sub = sub {
+        if( my $task = shift @{$txh->[TASKi]} ) {
+            $txh->[STATEi] = BUSY;
+            $task->[0]($loop_sub, $fail_sub);
+        }
+        else {
+            $txh->[STATEi] = IDLE;
+            undef $loop_sub;
+        }
+    }; $loop_sub->();
+}
+
+sub _check_and_act {
+    my($txh, $act, $cb) = @_;
+    if( $txh->[STATEi]==ZOMBIE ) {
+        local $errno = 2000;
+        local $errstr = 'This transaction has been aborted';
+        $cb->();
+        return;
+    }
+    if( $txh->[STATEi]==DONE ) {
+        local $errno = 2000;
+        local $errstr = 'This transaction has been committed';
+        $cb->();
+        return;
+    }
+    push @{$txh->[TASKi]}, [$act, $cb];
+    _consume_task($txh) if( $txh->[STATEi]==IDLE );
+}
+
+sub _zombie_flush {
+    my($txh, $state) = @_;
+    $txh->[STATEi] = ZOMBIE;
+
+    my $tasks = $txh->[TASKi];
+    $txh->[TASKi] = [];
+
+    for my $task (@$tasks) {
+        $task->[1]();
+    }
+}
+
+sub DESTROY {
+    my $txh = shift;
+    if( $txh->[NEXTi] ) {
+        my $dbh = $txh->[DBHi];
+        my $hd = $dbh->[AnyEvent::MySQL::db::HDi];
+        AnyEvent::MySQL::Imp::send_packet($hd, 0, AnyEvent::MySQL::Imp::COM_QUERY, 'rollback');
+        AnyEvent::MySQL::Imp::recv_response($hd, \&AnyEvent::MySQL::_empty_cb);
+    }
+    _zombie_flush($txh, $txh->[STATEi]==DONE ? DONE : ZOMBIE);
+    $txh->[NEXTi]() if( $txh->[NEXTi] );
+}
 
 =head2 $txh = AnyEvent::MySQL::tx->new($dbh, [$cb->($rv)])
 
@@ -453,17 +598,20 @@ sub new {
     my($class, $dbh) = @_;
     my $txh = bless [], $class;
     $txh->[DBHi] = $dbh;
-    $txh->[STATEi] = AnyEvent::MySQL::BUSY;
+    $txh->[STATEi] = NEW;
     $txh->[TASKi] = [];
 
     AnyEvent::MySQL::db::_check_and_act($dbh, sub {
         my $next_act = shift;
-        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, 'begin');
-        AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
+        $txh->[NEXTi] = $next_act;
+        AnyEvent::MySQL::Imp::send_packet($dbh->[AnyEvent::MySQL::db::HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, 'begin');
+        AnyEvent::MySQL::Imp::recv_response($dbh->[AnyEvent::MySQL::db::HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $cb->($txh);
+                _consume_task($txh);
+                return;
             }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
                 local $errno = $_[1];
                 local $errstr = $_[3];
                 $cb->();
@@ -473,19 +621,78 @@ sub new {
                 local $errstr = "Unexpected result: $_[0]";
                 $cb->();
             }
+            _zombie_flush($txh, ZOMBIE);
             $next_act->();
         });
-    }, $cb, $txh);
+    }, $cb);
 
     return $txh;
 }
 
-sub DESTROY {
+=head2 $txh->commit($cb->($rv))
+
+=cut
+sub commit {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my $txh = shift;
-    if( $txh->[STATEi]==AnyEvent::MySQL::IDLE ) {
-        AnyEvent::MySQL::db::_check_and_act($dbh, sub {
-        }, $cb, $txh);
-    }
+
+    _check_and_act($txh, sub {
+        my $dbh = $txh->[DBHi];
+        my $hd = $dbh->[AnyEvent::MySQL::db::HDi];
+        AnyEvent::MySQL::Imp::send_packet($hd, 0, AnyEvent::MySQL::Imp::COM_QUERY, 'commit');
+        AnyEvent::MySQL::Imp::recv_response($hd, sub {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                _zombie_flush($txh, DONE);
+                $cb->(1);
+            }
+            else {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    local $errno = $_[1];
+                    local $errstr = $_[3];
+                }
+                else {
+                    local $errno = 2000;
+                    local $errstr = "Unexpected result: $_[0]";
+                }
+                _zombie_flush($txh, ZOMBIE);
+                $cb->();
+            }
+            delete($txh->[NEXTi])->();
+        });
+    }, $cb);
+}
+
+=head2 $txh->rollback($cb->($rv))
+
+=cut
+sub rollback {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my $txh = shift;
+
+    _check_and_act($txh, sub {
+        my $dbh = $txh->[DBHi];
+        my $hd = $dbh->[AnyEvent::MySQL::db::HDi];
+        AnyEvent::MySQL::Imp::send_packet($hd, 0, AnyEvent::MySQL::Imp::COM_QUERY, 'rollback');
+        AnyEvent::MySQL::Imp::recv_response($hd, sub {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                _zombie_flush($txh, ZOMBIE);
+                $cb->(1);
+            }
+            else {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    local $errno = $_[1];
+                    local $errstr = $_[3];
+                }
+                else {
+                    local $errno = 2000;
+                    local $errstr = "Unexpected result: $_[0]";
+                }
+                _zombie_flush($txh, ZOMBIE);
+                $cb->();
+            }
+            delete($txh->[NEXTi])->();
+        });
+    }, $cb);
 }
 
 package AnyEvent::MySQL::st;
@@ -496,6 +703,13 @@ use warnings;
 use Scalar::Util qw(weaken);
 
 use constant {
+    BUSY => 1,
+    IDLE => 2,
+    ZOMBIE => 3,
+    NEW => 4,
+};
+
+use constant {
     DBHi => 0,
     IDi => 1,
     STATEi => 2,
@@ -503,6 +717,7 @@ use constant {
     FTi => 4,
     PARAMi => 5,
     FIELDi => 6,
+    STATEMENTi => 7,
 };
 
 *errstr = *AnyEvent::MySQL::errstr;
@@ -512,43 +727,29 @@ our $errno;
 
 sub _consume_task {
     my $sth = shift;
-    my $loop_sub; $loop_sub = sub {
-        if( my $task = shift @{$sth->[TASKi]} ) {
-            $sth->[STATEi] = AnyEvent::MySQL::BUSY;
-            $task->[0]($loop_sub);
-        }
-        else {
-            $sth->[STATEi] = AnyEvent::MySQL::IDLE;
-            undef $loop_sub;
-        }
-    }; $loop_sub->();
+    if( $sth->[STATEi]==ZOMBIE ) {
+        _zombie_flush($sth);
+        return;
+    }
+
+    my $dbh = $sth->[DBHi];
+    my $tasks = $sth->[TASKi];
+    $sth->[TASKi] = [];
+    for my $task (@$tasks) {
+        AnyEvent::MySQL::db::_check_and_act($dbh, $task->[0], $task->[1]);
+    }
 }
 
 sub _check_and_act {
     my($sth, $act, $cb) = @_;
-    if( $sth->[STATEi]==AnyEvent::MySQL::IDLE ) {
-        push @{$sth->[TASKi]}, [$act, $cb];
-        _consume_task($sth);
-    }
-    elsif( $sth->[STATEi]==AnyEvent::MySQL::BUSY ) {
-        push $sth->[TASKi], [$act, $cb];
-    }
-    elsif( $sth->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
+    if( $sth->[STATEi]==ZOMBIE ) {
         local $errno = 2030;
         local $errstr = 'Statement not prepared';
         $cb->();
+        return;
     }
-    elsif( $sth->[STATEi]==AnyEvent::MySQL::ZOMBIE_DB ) {
-        local $errno = 2006;
-        local $errstr = 'MySQL server has gone away';
-        $cb->();
-    }
-    else {
-        local $errno = 2000;
-        local $errstr = "Unknown state: $sth->[STATEi]";
-        _warn_when_verbose($sth, 2);
-        $cb->();
-    }
+    push @{$sth->[TASKi]}, [$act, $cb];
+    _consume_task($sth) if( $sth->[STATEi]==IDLE );
 }
 
 sub _zombie_flush_common {
@@ -570,7 +771,7 @@ sub _zombie_flush_common {
 
 sub _zombie_flush {
     my($sth) = @_;
-    $sth->[STATEi] = AnyEvent::MySQL::ZOMBIE;
+    $sth->[STATEi] = ZOMBIE;
     local $errno = 2030;
     local $errstr = 'Statement not prepared';
 
@@ -579,9 +780,54 @@ sub _zombie_flush {
 
 sub _zombie_parent_flush {
     my($sth) = @_;
-    $sth->[STATEi] = AnyEvent::MySQL::ZOMBIE_DB;
+    $sth->[STATEi] = ZOMBIE;
+    local $errno = 2006;
+    local $errstr = 'MySQL server has gone away';
 
     _zombie_flush_common($sth);
+}
+
+sub _prepare {
+    my($sth, $next_act, $cb) = @_;
+    if( $sth->[STATEi]==NEW ) {
+        $next_act->();
+        return;
+    }
+    my $dbh = $sth->[DBHi];
+
+    my $hd = $dbh->[AnyEvent::MySQL::db::HDi];
+    AnyEvent::MySQL::Imp::send_packet($hd, 0, AnyEvent::MySQL::Imp::COM_STMT_PREPARE, $sth->[STATEMENTi]);
+    AnyEvent::MySQL::Imp::recv_response($hd, prepare => 1, sub {
+        if( $_[0]==AnyEvent::MySQL::Imp::RES_PREPARE ) {
+            $sth->[IDi] = $_[1];
+            $sth->[PARAMi] = $_[2];
+            $sth->[FIELDi] = $_[3];
+
+            $cb->($sth);
+        }
+        else {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                local $errno = $_[1];
+                local $errstr = $_[3];
+                $cb->();
+            }
+            else {
+                local $errno = 2000;
+                local $errstr = "Unexpected response: $_[0]";
+                $cb->();
+            }
+            _zombie_flush($sth);
+        }
+        $next_act->();
+    });
+}
+
+sub DESTROY {
+    my $sth = shift;
+    my $dbh = $sth->[DBHi];
+    my $hd = $dbh->[AnyEvent::MySQL::db::HDi];
+    AnyEvent::MySQL::Imp::send_packet($hd, 0, AnyEvent::MySQL::Imp::COM_STMT_CLOSE, pack('V', $sth->[IDi]));
+    AnyEvent::MySQL::Imp::response($hd, \&AnyEvent::MySQL::_empty_cb);
 }
 
 =head2 $sth_zombie = AnyEvent::MySQL::st->new_zombie_db($dbh, $statement, [$cb->($sth)])
@@ -591,7 +837,7 @@ sub new_zombie_db {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my($class, $dbh, $statement) = @_;
     my $sth = bless [], $class;
-    $sth->[STATEi] = AnyEvent::MySQL::ZOMBIE_DB;
+    $sth->[STATEi] = ZOMBIE;
     local $errno = 2006;
     local $errstr = 'MySQL server has gone away';
     $cb->();
@@ -607,52 +853,31 @@ sub new {
     my $sth = bless [], $class;
     $sth->[DBHi] = $dbh;
     $sth->[TASKi] = [];
-    $sth->[STATEi] = AnyEvent::MySQL::BUSY;
+    $sth->[STATEi] = NEW;
     $sth->[FTi] = [];
+    $sth->[STATEMENTi] = $statement;
 
     AnyEvent::MySQL::db::_check_and_act($dbh, sub {
         my $next_act = shift;
-        my $hd = $dbh->[AnyEvent::MySQL::db::HDi];
-        AnyEvent::MySQL::Imp::send_packet($hd, 0, AnyEvent::MySQL::Imp::COM_STMT_PREPARE, $statement);
-        AnyEvent::MySQL::Imp::recv_response($hd, prepare => 1, sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_PREPARE ) {
-                $sth->[IDi] = $_[1];
-                $sth->[PARAMi] = $_[2];
-                $sth->[FIELDi] = $_[3];
-
-                $cb->($sth);
-                _consume_task($sth);
-            }
-            else {
-                if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    local $errno = $_[1];
-                    local $errstr = $_[3];
-                    $cb->();
-                }
-                else {
-                    local $errno = 2000;
-                    local $errstr = "Unexpected response: $_[0]";
-                    $cb->();
-                }
-                _zombie_flush($sth);
-            }
+        $sth->[STATEi] = BUSY;
+        _prepare($sth, sub {
+            _consume_task($sth);
             $next_act->();
-        });
-    }, $cb);
-
+        }, $cb);
+    }, sub {
+        $sth->[STATEi] = ZOMBIE;
+        _zombie_flush($sth);
+    });
     return $sth;
 }
 
-=head2 $fth = $sth->execute(@bind_values, [$cb->($fth, $rv)])
+=head2 $fth = $sth->execute(@bind_values, [\%attr,] [$cb->($fth, $rv)])
 
 =cut
 sub execute {
     my $sth = $_[0];
 
-    if( $sth->[STATEi]==AnyEvent::MySQL::ZOMBIE_DB ) {
-        return AnyEvent::MySQL::ft->new_zombie_db(@_);
-    }
-    elsif( $sth->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
+    if( $sth->[STATEi]==ZOMBIE ) {
         return AnyEvent::MySQL::ft->new_zombie_st(@_);
     }
     else {
@@ -669,6 +894,12 @@ use strict;
 use warnings;
 
 use constant {
+    BUSY => 1,
+    IDLE => 2,
+    ZOMBIE => 3,
+};
+
+use constant {
     STHi => 0,
     STATEi => 1,
     TASKi => 2,
@@ -679,12 +910,17 @@ use constant {
 sub _consume_task {
     my $fth = shift;
     my $loop_sub; $loop_sub = sub {
+        if( $fth->[STATEi]==ZOMBIE ) {
+            undef $loop_sub;
+            _zombie_flush($fth);
+            return;
+        }
         if( my $task = shift @{$fth->[TASKi]} ) {
-            $fth->[STATEi] = AnyEvent::MySQL::BUSY;
+            $fth->[STATEi] = BUSY;
             $task->[0]($loop_sub);
         }
         else {
-            $fth->[STATEi] = AnyEvent::MySQL::IDLE;
+            $fth->[STATEi] = IDLE;
             undef $loop_sub;
         }
     }; $loop_sub->();
@@ -692,60 +928,33 @@ sub _consume_task {
 
 sub _check_and_act {
     my($fth, $act, $cb) = @_;
-    if( $fth->[STATEi]==AnyEvent::MySQL::IDLE ) {
-        push @{$fth->[TASKi]}, [$act, $cb];
-        _consume_task($fth);
-    }
-    elsif( $fth->[STATEi]==AnyEvent::MySQL::BUSY ) {
-        push @{$fth->[TASKi]}, [$act, $cb];
-    }
-    elsif( $fth->[STATEi]==AnyEvent::MySQL::ZOMBIE ) {
+    if( $fth->[STATEi]==ZOMBIE ) {
         local $errno = 2030;
         local $errstr = 'Statement not prepared';
         $cb->();
+        return;
     }
-    elsif( $fth->[STATEi]==AnyEvent::MySQL::ZOMBIE_ST ) {
-        local $errno = 2030;
-        local $errstr = 'Statement not prepared';
-        $cb->();
-    }
-    elsif( $fth->[STATEi]==AnyEvent::MySQL::ZOMBIE_DB ) {
-        local $errno = 2006;
-        local $errstr = 'MySQL server has gone away';
-        $cb->();
-    }
-    else {
-        local $errno = 2000;
-        local $errstr = "Unknown state: $fth->[STATEi]";
-        _warn_when_verbose($fth, 2);
-        $cb->();
-    }
+    push @{$fth->[TASKi]}, [$act, $cb];
+    _consume_task($fth) if( $fth->[STATEi]==IDLE );
 }
 
 sub _zombie_flush {
-    my($sth) = @_;
-    $sth->[STATEi] = AnyEvent::MySQL::ZOMBIE;
+    my($fth) = @_;
     local $errno = 2030;
     local $errstr = 'Statement not prepared';
-
-    _zombie_flush_common($sth);
+    _zombie_parent_flush($fth);
 }
 
-=head2 $fth = AnyEvent::MySQL::ft->new_zombie_db($sth, @bind_values, [$cb->($fth, $rv)])
+sub _zombie_parent_flush {
+    my($fth) = @_;
+    $fth->[STATEi] = ZOMBIE;
 
-=cut
-sub new_zombie_db {
-    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my($class, $sth) = @_;
+    my $tasks = $fth->[TASKi];
+    $fth->[TASKi] = [];
 
-    my $fth = bless [], $class;
-    $fth->[STATEi] = AnyEvent::MySQL::ZOMBIE_DB;
-
-    local $errno = 2006;
-    local $errstr = 'MySQL server has gone away';
-    $cb->();
-
-    return $fth;
+    for my $task (@$tasks) {
+        $task->[1]();
+    }
 }
 
 =head2 $fth = AnyEvent::MySQL::ft->new_zombie_st($sth, @bind_values, [$cb->($fth, $rv)])
@@ -756,7 +965,7 @@ sub new_zombie_st {
     my($class, $sth) = @_;
 
     my $fth = bless [], $class;
-    $fth->[STATEi] = AnyEvent::MySQL::ZOMBIE_ST;
+    $fth->[STATEi] = ZOMBIE;
 
     local $errno = 2030;
     local $errstr = 'Statement not prepared';
@@ -765,16 +974,17 @@ sub new_zombie_st {
     return $fth;
 }
 
-=head2 $fth = AnyEvent::MySQL::ft->new($sth, @bind_values, [$cb->($fth, $rv)])
+=head2 $fth = AnyEvent::MySQL::ft->new($sth, @bind_values, [\%attr,] [$cb->($fth, $rv)])
 
 =cut
 sub new {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my $attr = ref($_[-1]) eq 'HASH' ? pop : {};
     my($class, $sth, @bind_values) = @_;
 
     my $fth = bless [], $class;
     $fth->[STHi] = $sth;
-    $fth->[STATEi] = AnyEvent::MySQL::BUSY;
+    $fth->[STATEi] = BUSY;
     $fth->[TASKi] = [];
 
     AnyEvent::MySQL::st::_check_and_act($sth, sub {

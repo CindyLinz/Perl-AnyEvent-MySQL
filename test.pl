@@ -4,6 +4,13 @@ use AE;
 use AnyEvent::Socket;
 use AnyEvent::Handle;
 use Data::Dumper;
+use Devel::StackTrace;
+use EV;
+
+$EV::DIED = sub {
+    print "EV::DIED: $@\n";
+    print Devel::StackTrace->new->as_string;
+};
 
 use lib 'lib';
 use AnyEvent::MySQL;
@@ -24,7 +31,7 @@ my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=
 $dbh->do("select * from t1", sub {
     my $rv = shift;
     if( defined($rv) ) {
-        warn "Do success: $_[1]";
+        warn "Do success: $rv";
     }
     else {
         warn "Do fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::errno)";
@@ -153,7 +160,7 @@ $dbh->selectall_hashref("select a*2, b from t1", 'b', sub {
     warn Dumper($_[0]);
 });
 
-$dbh->selectall_hashref("select a*2, b from t1", 'b', 'a*2', sub {
+$dbh->selectall_hashref("select a*2, b from t1", ['b', 'a*2'], sub {
     warn "selectall_hashref";
     warn Dumper($_[0]);
 });
@@ -166,6 +173,42 @@ $dbh->selectall_hashref("select a*2, b from t1", sub {
 $dbh->selectcol_arrayref("select a*2, b from t1", { Columns => [1,2,1] }, sub {
     warn "selectcol_arrayref";
     warn Dumper($_[0]);
+});
+
+my $txh = $dbh->begin_work(sub {
+    warn "txn begin.. @_";
+});
+
+$dbh->do("insert into t1 values (50,50)", { Tx => $txh }, sub {
+    warn "insert in txn @_";
+});
+
+$txh->rollback(sub {
+    warn "rollback txn @_";
+});
+
+$dbh->selectall_arrayref("select * from t1", sub {
+    warn "check rollback txn: ".Dumper($_[0]);
+});
+
+my $txh2 = $dbh->begin_work(sub {
+    warn "txn2 begin.. @_";
+});
+
+$dbh->do("insert into t1 values (50,50)", { Tx => $txh2 }, sub {
+    warn "insert in txn2 @_";
+});
+
+$txh2->commit(sub {
+    warn "commit txn2 @_";
+});
+
+$dbh->selectall_arrayref("select * from t1", sub {
+    warn "check commit txn: ".Dumper($_[0]);
+});
+
+$dbh->do("delete from t1 where a=50", sub {
+    warn "remove the effect @_";
     $end5->send;
 });
 

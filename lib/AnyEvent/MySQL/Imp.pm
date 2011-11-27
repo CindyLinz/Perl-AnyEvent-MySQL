@@ -14,7 +14,7 @@ use Combinator;
 use feature qw(switch);
 
 use constant {
-    DEV => 1,
+    DEV => 0,
 };
 
 use constant {
@@ -295,7 +295,9 @@ sub take_type {
             return substr($_[0], 0, $len, '');
         }
         default {
-            warn "Unsupported type: $_[1]";
+            warn "Unsupported type: $_";
+            use Devel::StackTrace;
+            print Devel::StackTrace->new->as_string;
             return;
         }
     }
@@ -639,7 +641,7 @@ sub recv_response {
             my $field_count = take_lcb($_[0]);
             my $extra = $_[0] eq '' ? undef : take_lcb($_[0]);
 
-            warn "field_count=$field_count" if DEV;
+            warn "field_count=$field_count";# if DEV;
 
             my @field;
             for(my $i=0; $i<$field_count; ++$i) {

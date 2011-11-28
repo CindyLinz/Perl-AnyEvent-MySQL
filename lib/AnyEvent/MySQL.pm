@@ -267,6 +267,22 @@ sub _connect {
     }
 }
 
+sub _text_prepare {
+    my $statement = shift;
+    $statement =~ s(\?){
+        my $value = shift;
+        if( defined($value) ) {
+            $value =~ s/\\/\\\\/g;
+            $value =~ s/'/\\'/g;
+            "'$value'";
+        }
+        else {
+            'NULL';
+        }
+    }ge;
+    return $statement;
+}
+
 =head2 $dbh = AnyEvent::MySQL::db->new($dsn, $username, [$auth, [\%attr,]] $cb->($dbh))
 
     If failed, the $dbh in the $cb's args will be undef.
@@ -303,7 +319,7 @@ sub do {
 
     my $act = sub {
         my $next_act = shift;
-        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
+        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $cb->($_[1]);
@@ -328,16 +344,16 @@ sub do {
     }
 }
 
-=head2 $dbh->selectall_arrayref($statement, [\%attr,] $cb->($ary_ref))
+=head2 $dbh->selectall_arrayref($statement, [\%attr, [@bind_values,]] $cb->($ary_ref))
 
 =cut
 sub selectall_arrayref {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my($dbh, $statement, $attr) = @_;
+    my($dbh, $statement, $attr, @bind_values) = @_;
 
     my $act = sub {
         my $next_act = shift;
-        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
+        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $cb->([]);
@@ -362,13 +378,12 @@ sub selectall_arrayref {
     }
 }
 
-=head2 $dbh->selectall_hashref($statement, ($key_field|\@key_field), [\%attr,] $cb->($hash_ref))
+=head2 $dbh->selectall_hashref($statement, ($key_field|\@key_field), [\%attr, [@bind_values,]] $cb->($hash_ref))
 
 =cut
 sub selectall_hashref {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my $attr = ref($_[-1]) eq 'HASH' ? pop : {};
-    my($dbh, $statement, $key_field) = @_;
+    my($dbh, $statement, $key_field, $attr, @bind_values) = @_;
 
     my @key_field;
     if( ref($key_field) eq 'ARRAY' ) {
@@ -383,7 +398,7 @@ sub selectall_hashref {
 
     my $act = sub {
         my $next_act = shift;
-        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
+        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 if( @key_field ) {
@@ -437,18 +452,18 @@ sub selectall_hashref {
     }
 }
 
-=head2 $dbh->selectcol_arrayref($statement, [\%attr,] $cb->($ary_ref))
+=head2 $dbh->selectcol_arrayref($statement, [\%attr, [@bind_values,]] $cb->($ary_ref))
 
 =cut
 sub selectcol_arrayref {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my($dbh, $statement, $attr) = @_;
+    my($dbh, $statement, $attr, @bind_values) = @_;
     $attr ||= {};
     my @columns = map { $_-1 } @{ $attr->{Columns} || [1] };
 
     my $act = sub {
         my $next_act = shift;
-        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, $statement);
+        AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $cb->([]);

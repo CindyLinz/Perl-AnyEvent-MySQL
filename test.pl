@@ -1,8 +1,6 @@
 #!/usr/bin/perl
 
 use AE;
-use AnyEvent::Socket;
-use AnyEvent::Handle;
 use Data::Dumper;
 use Devel::StackTrace;
 use EV;
@@ -28,7 +26,7 @@ my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=
     }
 });
 
-$dbh->do("select * from t1", sub {
+$dbh->do("select * from t1 where a<=?", {}, 15, sub {
     my $rv = shift;
     if( defined($rv) ) {
         warn "Do success: $rv";
@@ -150,7 +148,7 @@ $end4->recv;
 
 my $end5 = AE::cv;
 
-$dbh->selectall_arrayref("select a*2, b from t1", sub {
+$dbh->selectall_arrayref("select a*2, b from t1 where a<=?", {}, 15, sub {
     warn "selectall_arrayref";
     warn Dumper($_[0]);
 });

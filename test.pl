@@ -178,7 +178,7 @@ my $txh = $dbh->begin_work(sub {
 });
 
 $dbh->do("insert into t1 values (50,50)", { Tx => $txh }, sub {
-    warn "insert in txn @_";
+    warn "insert in txn @_ insertid=".$dbh->last_insert_id;
 });
 
 $txh->rollback(sub {
@@ -194,7 +194,7 @@ my $txh2 = $dbh->begin_work(sub {
 });
 
 $dbh->do("insert into t1 values (50,50)", { Tx => $txh2 }, sub {
-    warn "insert in txn2 @_";
+    warn "insert in txn2 @_ insertid=".$dbh->last_insert_id;
 });
 
 $txh2->commit(sub {

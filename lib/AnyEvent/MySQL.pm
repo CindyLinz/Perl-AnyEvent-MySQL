@@ -89,6 +89,7 @@ use constant {
     TASKi => 6,
     STi => 7,
     RENEWi => 8,
+    INSERTIDi => 9,
 };
 
 *errstr = *AnyEvent::MySQL::errstr;
@@ -283,7 +284,7 @@ sub _text_prepare {
     return $statement;
 }
 
-=head2 $dbh = AnyEvent::MySQL::db->new($dsn, $username, [$auth, [\%attr,]] $cb->($dbh))
+=head2 $dbh = AnyEvent::MySQL::db->new($dsn, $username, [$auth, [\%attr,]] [$cb->($dbh)])
 
     If failed, the $dbh in the $cb's args will be undef.
 
@@ -293,7 +294,7 @@ sub _text_prepare {
 
 =cut
 sub new {
-    my $cb = pop;
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my($class, $dsn, $username, $auth, $attr) = @_;
 
     my $dbh = bless [], $class;
@@ -305,9 +306,18 @@ sub new {
     $dbh->[TASKi] = [];
     $dbh->[STi] = [];
 
-    _connect($dbh);
+    _connect($dbh, $cb);
 
     return $dbh;
+}
+
+=head2 $rv = $dbh->last_insert_id
+
+    Non-blocking get the value immediately
+
+=cut
+sub last_insert_id {
+    $_[0][INSERTIDi];
 }
 
 =head2 $dbh->do($statement, [\%attr, [@bind_values,]] [$cb->($rv)])
@@ -322,6 +332,7 @@ sub do {
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $dbh->[INSERTIDi] = $_[2];
                 $cb->($_[1]);
             }
             elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
@@ -356,6 +367,7 @@ sub selectall_arrayref {
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $dbh->[INSERTIDi] = $_[2];
                 $cb->([]);
             }
             elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
@@ -401,6 +413,7 @@ sub selectall_hashref {
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $dbh->[INSERTIDi] = $_[2];
                 if( @key_field ) {
                     $cb->({});
                 }
@@ -466,6 +479,7 @@ sub selectcol_arrayref {
         AnyEvent::MySQL::Imp::send_packet($dbh->[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $dbh->[INSERTIDi] = $_[2];
                 $cb->([]);
             }
             elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {

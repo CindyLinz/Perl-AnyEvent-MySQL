@@ -1,5 +1,8 @@
 #!/usr/bin/perl
 
+use strict;
+use warnings;
+
 use AE;
 use Data::Dumper;
 use Devel::StackTrace;
@@ -207,8 +210,33 @@ $dbh->selectall_arrayref("select * from t1", sub {
 
 $dbh->do("delete from t1 where a=50", sub {
     warn "remove the effect @_";
-    $end5->send;
 });
+
+my $update_st;
+
+my $txh3; $txh3 = $dbh->begin_work(sub {
+    warn "txn3 begin.. @_";
+});
+
+    $update_st = $dbh->prepare("insert into t1 values (?,?)", sub {
+        warn "prepare insert @_";
+    });
+    $update_st->execute(60, 60, { Tx => $txh3 }, sub {
+        warn "insert 60 @_";
+    });
+
+    $dbh->selectall_arrayref("select * from t1", { Tx => $txh3 }, sub {
+        warn "select in txn3: ".Dumper($_[0]);
+    });
+
+    $txh3->rollback(sub {
+        warn "txh3 rollback @_";
+    });
+
+    $dbh->selectall_arrayref("select * from t1", sub {
+        warn "select out txn3: ".Dumper($_[0]);
+        $end5->send;
+    });
 
 $end5->recv;
 

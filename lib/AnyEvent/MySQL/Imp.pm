@@ -664,7 +664,7 @@ sub recv_response {
                     else {
                         warn "got row!" if DEV;
                         my @cell;
-                        if( $opt{prepare} ) {
+                        if( $opt{execute} ) {
                             take_filler($_[0], 1);
                             my $null_bit_map = substr($_[0], 0, $field_count + 9 >> 3, '');
                             for(my $i=0; $i<$field_count; ++$i) {
@@ -814,11 +814,13 @@ sub do_execute_param {
     $packet .= $null_bit_map;
     $packet .= "\1";
     for(my $i=0; $i<@{$_[2]}; ++$i) {
-        put_num($packet, $_[3][$i][8], 2);
+        #put_num($packet, $_[3][$i][8], 2);
+        put_num($packet, MYSQL_TYPE_BLOB, 2);
     }
     for(my $i=0; $i<@{$_[2]}; ++$i) {
         if( defined($_[2][$i]) ) {
-            put_type($packet, $_[2][$i], $_[3][$i][8], $_[3][$i][7], $_[3][$i][9]);
+            #put_type($packet, $_[2][$i], $_[3][$i][8], $_[3][$i][7], $_[3][$i][9]);
+            put_type($packet, $_[2][$i], MYSQL_TYPE_BLOB, length($_[2][$i]), $_[3][$i][9]);
         }
     }
     send_packet($_[0], 0, COM_STMT_EXECUTE, $packet);

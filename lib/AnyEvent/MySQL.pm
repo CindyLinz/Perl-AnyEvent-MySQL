@@ -107,6 +107,11 @@ sub _push_task {
     _process_task($dbh) if( $dbh->{_}[CONN_STATEi]==IDLE_CONN );
 }
 
+sub _unshift_task {
+    my($dbh, $task) = @_;
+    unshift @{$dbh->{_}[TASKi]}, $task;
+}
+
 sub _report_error {
     my($dbh, $error_num, $error_str) = @_;
 
@@ -370,14 +375,11 @@ sub last_insert_id {
     $_[0]{mysql_insertid};
 }
 
-=head2 $dbh->do($statement, [\%attr, [@bind_values,]] [$cb->($rv)])
-
-=cut
-sub do {
+sub _do {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my($dbh, $statement, $attr, @bind_values) = @_;
+    my($rev_dir, $dbh, $statement, $attr, @bind_values) = @_;
 
-    _push_task($dbh, [TXN_TASK, sub {
+    my @args = ($dbh, [TXN_TASK, sub {
         my $next_act = shift;
         $dbh->{_}[FALLBACKi] = sub {
             $cb->();
@@ -399,6 +401,34 @@ sub do {
             $next_act->();
         });
     }, $cb]);
+
+    if( $rev_dir ) {
+        _unshift_task(@args);
+    }
+    else {
+        _push_task(@args);
+    }
+}
+
+=head2 $dbh->do($statement, [\%attr, [@bind_values,]] [$cb->($rv)])
+
+=cut
+sub do {
+    unshift @_, 0;
+    &_do;
+}
+
+=head2 $dbh->pre_do($statement, [\%attr, [@bind_values,]] [$cb->($rv)])
+
+    This method is like $dbh->do except that $dbh->pre_do will unshift
+    job into the queue instead of push.
+
+    This method is for the initializing actions in the $dbh->connect's callback
+
+=cut
+sub pre_do {
+    unshift @_, 1;
+    &_do;
 }
 
 =head2 $dbh->selectall_arrayref($statement, [\%attr, [@bind_values,]] $cb->($ary_ref))

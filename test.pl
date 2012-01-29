@@ -22,6 +22,8 @@ my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=
     my($dbh) = @_;
     if( $dbh ) {
         warn "Connect success!";
+        $dbh->pre_do("set names latin1");
+        $dbh->pre_do("set names utf8");
     }
     else {
         warn "Connect fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::errno)";
@@ -168,6 +170,11 @@ $dbh->selectall_hashref("select a*2, b from t1", ['b', 'a*2'], sub {
 
 $dbh->selectall_hashref("select a*2, b from t1", sub {
     warn "selectall_hashref";
+    warn Dumper($_[0]);
+});
+
+$dbh->selectall_arrayref("select * from t3", sub {
+    warn "selectall_arrayref t3";
     warn Dumper($_[0]);
 });
 

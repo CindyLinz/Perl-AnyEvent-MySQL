@@ -217,7 +217,7 @@ sub _process_task {
         return;
     }
 
-    my $task = shift $dbh->{_}[TASKi];
+    my $task = shift @{$dbh->{_}[TASKi]};
     return if( !$task );
 
     my $next = sub {

@@ -499,15 +499,17 @@ sub parse_error {
 sub recv_packet {
     my $cb = pop;
     my($hd) = @_;
-    $hd->push_read( chunk => 4, sub {
-        my $len = unpack("V", $_[1]);
-        my $num = $len >> 24;
-        $len &= 0xFFFFFF;
-        print "pack_len=$len, pack_num=$num\n" if DEV;
-        $hd->unshift_read( chunk => $len, sub {
-            $cb->($_[1]);
+    if( $hd ) {
+        $hd->push_read( chunk => 4, sub {
+            my $len = unpack("V", $_[1]);
+            my $num = $len >> 24;
+            $len &= 0xFFFFFF;
+            print "pack_len=$len, pack_num=$num\n" if DEV;
+            $hd->unshift_read( chunk => $len, sub {
+                $cb->($_[1]);
+            } );
         } );
-    } );
+    }
 }
 
 # skip_until_eof($hd, $cb->())
@@ -525,6 +527,8 @@ sub skip_until_eof {
 
 # send_packet($hd, $packet_num, $packet_frag1, $pack_frag2, ...)
 sub send_packet {
+    return if !$_[0];
+    local $_[0] = $_[0];
     my $len = reduce { $a + length($b) } 0, @_[2..$#_];
     $_[0]->push_write(substr(pack('V', $len), 0, 3));
     $_[0]->push_write(chr($_[1]));
@@ -691,7 +695,7 @@ sub recv_response {
     });
 }
 
-# do_auth($hd, $username, [$password, [$database,]] $cb->($success, $err_num_and_msg))
+# do_auth($hd, $username, [$password, [$database,]] $cb->($success, $err_num_and_msg, $thread_id))
 sub do_auth {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : sub {};
     my($hd, $username, $password, $database) = @_;
@@ -767,7 +771,7 @@ sub do_auth {
         send_packet($hd, 1, $packet);
         recv_packet($hd, sub {
             if( parse_ok($_[0]) ) {
-                $cb->(1);
+                $cb->(1, undef, $thread_id);
             }
             else {
                 my($errno, $sqlstate, $message) = parse_error($_[0]);

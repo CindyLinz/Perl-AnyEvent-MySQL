@@ -558,6 +558,96 @@ sub selectcol_arrayref {
     }, $cb]);
 }
 
+=head2 $dbh->selectrow_array($statement, [\%attr, [@bind_values,]], $cb->(@row_ary))
+
+=cut
+sub selectrow_array {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my($dbh, $statement, $attr, @bind_values) = @_;
+
+    _push_task($dbh, [TXN_TASK, sub {
+        my $next_act = shift;
+        AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
+        AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $dbh->{mysql_insertid} = $_[2];
+                $cb->();
+            }
+            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                _report_error($dbh, $_[1], $_[3]);
+                $cb->();
+            }
+            else {
+                $cb->($_[2][0] ? @{$_[2][0]} : ());
+            }
+            $next_act->();
+        });
+    }, $cb]);
+}
+
+=head2 $dbh->selectrow_arrayref($statement, [\%attr, [@bind_values,]], $cb->($ary_ref))
+
+=cut
+sub selectrow_arrayref {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my($dbh, $statement, $attr, @bind_values) = @_;
+
+    _push_task($dbh, [TXN_TASK, sub {
+        my $next_act = shift;
+        AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
+        AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $dbh->{mysql_insertid} = $_[2];
+                $cb->(undef);
+            }
+            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                _report_error($dbh, $_[1], $_[3]);
+                $cb->(undef);
+            }
+            else {
+                $cb->($_[2][0]);
+            }
+            $next_act->();
+        });
+    }, $cb]);
+}
+
+=head2 $dbh->selectrow_hashref($statement, [\%attr, [@bind_values,]], $cb->($hash_ref))
+
+=cut
+sub selectrow_hashref {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my($dbh, $statement, $attr, @bind_values) = @_;
+
+    _push_task($dbh, [TXN_TASK, sub {
+        my $next_act = shift;
+        AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
+        AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $dbh->{mysql_insertid} = $_[2];
+                $cb->(undef);
+            }
+            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                _report_error($dbh, $_[1], $_[3]);
+                $cb->(undef);
+            }
+            else {
+                if( $_[2][0] ) {
+                    my %record;
+                    for(my $j=$#{$_[2][0]}; $j>=0; --$j) {
+                        $record{$_[1][$j][4]} = $_[2][0][$j];
+                    }
+                    $cb->(\%record);
+                }
+                else {
+                    $cb->(undef);
+                }
+            }
+            $next_act->();
+        });
+    }, $cb]);
+}
+
 =head2 $sth = $dbh->prepare($statement, [$cb->($sth)])
 
     $cb will be called each time when this statement is prepared

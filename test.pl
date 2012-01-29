@@ -173,13 +173,28 @@ $dbh->selectall_hashref("select a*2, b from t1", sub {
     warn Dumper($_[0]);
 });
 
+$dbh->selectcol_arrayref("select a*2, b from t1", { Columns => [1,2,1] }, sub {
+    warn "selectcol_arrayref";
+    warn Dumper($_[0]);
+});
+
 $dbh->selectall_arrayref("select * from t3", sub {
     warn "selectall_arrayref t3";
     warn Dumper($_[0]);
 });
 
-$dbh->selectcol_arrayref("select a*2, b from t1", { Columns => [1,2,1] }, sub {
-    warn "selectcol_arrayref";
+$dbh->selectrow_array("select * from t1 where a>? order by a", {}, 2, sub {
+    warn "selectrow_array";
+    warn Dumper(\@_);
+});
+
+$dbh->selectrow_arrayref("select * from t1 where a>? order by a", {}, 2, sub {
+    warn "selectrow_arrayref";
+    warn Dumper($_[0]);
+});
+
+$dbh->selectrow_hashref("select * from t1 where a>? order by a", {}, 2, sub {
+    warn "selectrow_hashref";
     warn Dumper($_[0]);
         $end5->send;
 });

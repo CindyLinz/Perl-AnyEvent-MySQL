@@ -423,7 +423,7 @@ sub do {
     This method is like $dbh->do except that $dbh->pre_do will unshift
     job into the queue instead of push.
 
-    This method is for the initializing actions in the $dbh->connect's callback
+    This method is for the initializing actions in the AnyEvent::MySQL->connect's callback
 
 =cut
 sub pre_do {

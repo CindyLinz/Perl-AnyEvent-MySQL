@@ -215,6 +215,7 @@ sub _process_task {
     $dbh->{_}[CONN_STATEi] = IDLE_CONN;
     $dbh->{_}[ERRi] = $AnyEvent::MySQL::err = undef;
     $dbh->{_}[ERRSTRi] = $AnyEvent::MySQL::errstr = undef;
+    $dbh->{_}[FALLBACKi] = undef;
     weaken( my $wdbh = $dbh );
 
     if( !$dbh->{_}[HDi] ) {
@@ -229,7 +230,17 @@ sub _process_task {
         _process_task($wdbh) if $wdbh;
     };
 
-    $dbh->{_}[FALLBACKi] = $task->[2];
+    $dbh->{_}[FALLBACKi] = sub {
+        undef $dbh->{_}[FALLBACKi];
+        if( $dbh->{_}[TXN_STATEi]==NO_TXN ) {
+            warn "redo the task later..";
+            unshift @{$dbh->{_}[TASKi]}, $task;
+        }
+        else {
+            $task->[2]();
+        }
+        _process_task($dbh);
+    };
     if( $task->[0]==TXN_TASK ) {
         if( $dbh->{_}[TXN_STATEi]==DEAD_TXN ) {
             _report_error($dbh, 1402, 'Transaction branch dead');
@@ -381,10 +392,6 @@ sub _do {
 
     my @args = ($dbh, [TXN_TASK, sub {
         my $next_act = shift;
-        $dbh->{_}[FALLBACKi] = sub {
-            $cb->();
-            $next_act->();
-        };
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {

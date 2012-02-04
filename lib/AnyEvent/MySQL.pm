@@ -680,7 +680,7 @@ sub prepare {
 =cut
 sub begin_work {
     my $dbh = shift;
-    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
+    my $cb = shift;
 
     _push_task($dbh, [TXN_BEGIN, sub {
         my $next_act = shift;
@@ -688,16 +688,16 @@ sub begin_work {
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $dbh->{_}[TXN_STATEi] = EMPTY_TXN;
-                $cb->(1);
-                return;
-            }
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->();
+                $cb->(1) if $cb;
             }
             else {
-                _report_error($dbh, 2000, "Unexpected result: $_[0]");
-                $cb->();
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                }
+                else {
+                    _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                }
+                $cb->() if $cb;
             }
             $next_act->();
         });
@@ -709,7 +709,7 @@ sub begin_work {
 =cut
 sub commit {
     my $dbh = shift;
-    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
+    my $cb = shift;
 
     _push_task($dbh, [TXN_COMMIT, sub {
         my $next_act = shift;
@@ -718,7 +718,7 @@ sub commit {
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $dbh->{_}[TXN_STATEi] = NO_TXN;
-                $cb->(1);
+                $cb->(1) if $cb;
             }
             else {
                 if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
@@ -727,7 +727,7 @@ sub commit {
                 else {
                     _report_error($dbh, 2000, "Unexpected result: $_[0]");
                 }
-                $cb->();
+                $cb->() if $cb;
             }
             $next_act->();
         });

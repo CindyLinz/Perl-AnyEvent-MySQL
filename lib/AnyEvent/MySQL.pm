@@ -132,7 +132,7 @@ sub _reconnect {
 
 sub _connect {
     my $dbh = shift;
-    my $cb = shift || \&AnyEvent::_empty_cb;
+    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
     $dbh->{_}[CONN_STATEi] = BUSY_CONN;
 
     my $param = $dbh->{Name};
@@ -680,7 +680,7 @@ sub prepare {
 =cut
 sub begin_work {
     my $dbh = shift;
-    my $cb = shift || \&AnyEvent::_empty_cb;
+    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
 
     _push_task($dbh, [TXN_BEGIN, sub {
         my $next_act = shift;
@@ -709,7 +709,7 @@ sub begin_work {
 =cut
 sub commit {
     my $dbh = shift;
-    my $cb = shift || \&AnyEvent::_empty_cb;
+    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
 
     _push_task($dbh, [TXN_COMMIT, sub {
         my $next_act = shift;
@@ -739,7 +739,7 @@ sub commit {
 =cut
 sub rollback {
     my $dbh = shift;
-    my $cb = shift || \&AnyEvent::_empty_cb;
+    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
 
     _push_task($dbh, [TXN_ROLLBACK, sub {
         my $next_act = shift;
@@ -802,7 +802,7 @@ sub new {
 
 =cut
 sub execute {
-    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::_empty_cb;
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my $attr = ref($_[-1]) eq 'HASH' ? pop : {};
     my($sth, @bind_values) = @_;
     my $dbh = $sth->[DBHi];

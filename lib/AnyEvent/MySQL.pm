@@ -1010,6 +1010,81 @@ sub fetchrow_hashref {
     }
 }
 
+=head2 $ary_ref = $fth->fetchall_arrayref([$cb->($ary_ref)])
+
+=cut
+sub fetchall_arrayref {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : undef;
+    my $fth = shift;
+
+    if( $fth->[DATAi] ) {
+        my $all = delete $fth->[DATAi];
+        $cb->($all) if $cb;
+        return $all;
+    }
+    else {
+        $cb->() if $cb;
+        return;
+    }
+}
+
+=head2 $hash_ref = $fth->fetchall_hashref([($key_field|\@key_field),] [$cb->($hash_ref)])
+
+=cut
+sub fetchall_hashref {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : undef;
+    my($fth, $key_field) = @_;
+
+    my @key_field;
+    if( ref($key_field) eq 'ARRAY' ) {
+        @key_field = @$key_field;
+    }
+    elsif( defined($key_field) ) {
+        @key_field = ($key_field);
+    }
+    else {
+        @key_field = ();
+    }
+
+    if( $fth->[DATAi] ) {
+        my $field = $fth->[FIELDi];
+
+        my $res;
+        if( @key_field ) {
+            $res = {};
+        }
+        else {
+            $res = [];
+        }
+
+        while( @{$fth->[DATAi]} ) {
+            my $row = shift @{$fth->[DATAi]};
+            my %record;
+            for(my $i=0; $i<@$row; ++$i) {
+                $record{$field->[$i][4]} = $row->[$i];
+            }
+            if( @key_field ) {
+                my $h = $res;
+                for(@key_field[0..$#key_field-1]) {
+                    $h->{$record{$_}} ||= {};
+                    $h = $h->{$record{$_}};
+                }
+                $h->{$record{$key_field[-1]}} = \%record;
+            }
+            else {
+                push @$res, \%record;
+            }
+        }
+        delete $fth->[DATAi];
+        $cb->($res) if $cb;
+        return $res;
+    }
+    else {
+        $cb->() if $cb;
+        return;
+    }
+}
+
 =head1 AUTHOR
 
 Cindy Wang (CindyLinz)

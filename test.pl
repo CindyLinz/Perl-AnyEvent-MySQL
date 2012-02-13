@@ -196,7 +196,25 @@ $dbh->selectrow_arrayref("select * from t1 where a>? order by a", {}, 2, sub {
 $dbh->selectrow_hashref("select * from t1 where a>? order by a", {}, 2, sub {
     warn "selectrow_hashref";
     warn Dumper($_[0]);
-        $end5->send;
+});
+
+my $st = $dbh->prepare("select * from t1 where a>? order by a");
+
+$st->execute(2, sub {
+    warn "fetchall_arrayref";
+    warn Dumper($_[0]->fetchall_arrayref());
+});
+
+$st->execute(2, sub {
+    warn "fetchall_hashref(a)";
+    warn Dumper($_[0]->fetchall_hashref('a'));
+});
+
+$st->execute(2, sub {
+    warn "fetchall_hashref";
+    warn Dumper($_[0]->fetchall_hashref());
+
+    $end5->send;
 });
 
 #my $txh = $dbh->begin_work(sub {

@@ -1085,6 +1085,29 @@ sub fetchall_hashref {
     }
 }
 
+=head2 $ary_ref = $fth->fetchcol_arrayref([\%attr], [$cb->($ary_ref)])
+
+=cut
+sub fetchcol_arrayref {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : undef;
+    my($fth, $attr) = @_;
+    $attr ||= {};
+    my @columns = map { $_-1 } @{ $attr->{Columns} || [1] };
+
+    if( $fth->[DATAi] ) {
+        my @res = map {
+            my $r = $_;
+            map { $r->[$_] } @columns
+        } @{ delete $fth->[DATAi] };
+        $cb->(\@res) if $cb;
+        return \@res;
+    }
+    else {
+        $cb->() if $cb;
+        return;
+    }
+}
+
 =head1 AUTHOR
 
 Cindy Wang (CindyLinz)

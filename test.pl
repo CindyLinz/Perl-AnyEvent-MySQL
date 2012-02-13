@@ -213,6 +213,11 @@ $st->execute(2, sub {
 $st->execute(2, sub {
     warn "fetchall_hashref";
     warn Dumper($_[0]->fetchall_hashref());
+});
+
+$st->execute(2, sub {
+    warn "fetchcol_arrayref";
+    warn Dumper($_[0]->fetchcol_arrayref());
 
     $end5->send;
 });

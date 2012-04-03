@@ -680,7 +680,7 @@ sub prepare {
 =cut
 sub begin_work {
     my $dbh = shift;
-    my $cb = shift;
+    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
 
     _push_task($dbh, [TXN_BEGIN, sub {
         my $next_act = shift;
@@ -709,7 +709,7 @@ sub begin_work {
 =cut
 sub commit {
     my $dbh = shift;
-    my $cb = shift;
+    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
 
     _push_task($dbh, [TXN_COMMIT, sub {
         my $next_act = shift;

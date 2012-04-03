@@ -263,6 +263,7 @@ sub _process_task {
     elsif( $task->[0]==TXN_BEGIN ) {
         if( $dbh->{_}[TXN_STATEi]==NO_TXN ) {
             $dbh->{_}[TXN_STATEi] = DEAD_TXN;
+            $dbh->{_}[CONN_STATEi] = BUSY_CONN;
             $task->[1]($next);
         }
         elsif( $dbh->{_}[TXN_STATEi]==EMPTY_TXN ) {
@@ -271,6 +272,7 @@ sub _process_task {
         }
         else {
             warn "It's in a transaction already.. Abort the old one and begin the new one.";
+            $dbh->{_}[CONN_STATEi] = BUSY_CONN;
             _rollback($dbh, sub {
                 $task->[1]($next);
             });
@@ -288,6 +290,7 @@ sub _process_task {
             _process_task($dbh);
         }
         else {
+            $dbh->{_}[CONN_STATEi] = BUSY_CONN;
             $task->[1]($next);
         }
     }
@@ -302,6 +305,7 @@ sub _process_task {
             _process_task($dbh);
         }
         else {
+            $dbh->{_}[CONN_STATEi] = BUSY_CONN;
             $task->[1]($next);
         }
     }
@@ -688,7 +692,7 @@ sub begin_work {
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $dbh->{_}[TXN_STATEi] = EMPTY_TXN;
-                $cb->(1) if $cb;
+                $cb->(1);
             }
             else {
                 if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
@@ -697,7 +701,7 @@ sub begin_work {
                 else {
                     _report_error($dbh, 2000, "Unexpected result: $_[0]");
                 }
-                $cb->() if $cb;
+                $cb->();
             }
             $next_act->();
         });
@@ -718,7 +722,7 @@ sub commit {
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
             if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
                 $dbh->{_}[TXN_STATEi] = NO_TXN;
-                $cb->(1) if $cb;
+                $cb->(1);
             }
             else {
                 if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
@@ -727,7 +731,7 @@ sub commit {
                 else {
                     _report_error($dbh, 2000, "Unexpected result: $_[0]");
                 }
-                $cb->() if $cb;
+                $cb->();
             }
             $next_act->();
         });

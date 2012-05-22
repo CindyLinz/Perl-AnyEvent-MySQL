@@ -26,7 +26,7 @@ my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=
         $dbh->pre_do("set names utf8");
     }
     else {
-        warn "Connect fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::errno)";
+        warn "Connect fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
         $end->send;
     }
 });
@@ -37,7 +37,7 @@ $dbh->do("select * from t1 where a<=?", {}, 15, sub {
         warn "Do success: $rv";
     }
     else {
-        warn "Do fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::errno)";
+        warn "Do fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
     }
     $end->send;
 });
@@ -218,9 +218,28 @@ $st->execute(2, sub {
 $st->execute(2, sub {
     warn "fetchcol_arrayref";
     warn Dumper($_[0]->fetchcol_arrayref());
-
-    $end5->send;
 });
+
+$dbh->begin_work( sub {
+    warn "txn begin.. @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+} );
+
+$dbh->do("update t1 set a=? b=?", {}, 3, 4, sub {
+    warn "error update @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+} );
+
+$dbh->do("update t1 set b=b+1", {}, sub {
+    warn "after error update @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+} );
+
+$dbh->commit( sub {
+    warn "aborted commit @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+} );
+
+$dbh->do("update t1 set b=b+1", {}, sub {
+    warn "after aborted commit @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+    $end5->send;
+} );
 
 #my $txh = $dbh->begin_work(sub {
 #    warn "txn begin.. @_";

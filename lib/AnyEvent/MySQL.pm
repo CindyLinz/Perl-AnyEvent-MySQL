@@ -748,7 +748,10 @@ sub rollback {
     _push_task($dbh, [TXN_ROLLBACK, sub {
         my $next_act = shift;
 
-        _rollback($dbh, $next_act, $cb);
+        _rollback($dbh, $next_act, sub {
+            $dbh->{_}[TXN_STATEi] = NO_TXN if( $_[0] );
+            &$cb;
+        });
     }, $cb]);
 }
 sub _rollback {
@@ -757,7 +760,6 @@ sub _rollback {
     AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, 'rollback');
     AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
         if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-            $dbh->{_}[TXN_STATEi] = NO_TXN;
             $cb->(1) if $cb;
         }
         else {

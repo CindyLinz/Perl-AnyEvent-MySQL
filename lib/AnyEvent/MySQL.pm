@@ -398,17 +398,19 @@ sub _do {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{mysql_insertid} = $_[2];
-                $cb->($_[1]);
-            }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->();
-            }
-            else {
-                $cb->(0+@{$_[2]});
-            }
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{mysql_insertid} = $_[2];
+                    $cb->($_[1]);
+                }
+                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                    $cb->();
+                }
+                else {
+                    $cb->(0+@{$_[2]});
+                }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -453,17 +455,19 @@ sub selectall_arrayref {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{mysql_insertid} = $_[2];
-                $cb->([]);
-            }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->();
-            }
-            else {
-                $cb->($_[2]);
-            }
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{mysql_insertid} = $_[2];
+                    $cb->([]);
+                }
+                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                    $cb->();
+                }
+                else {
+                    $cb->($_[2]);
+                }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -491,46 +495,48 @@ sub selectall_hashref {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{mysql_insertid} = $_[2];
-                if( @key_field ) {
-                    $cb->({});
-                }
-                else {
-                    $cb->([]);
-                }
-            }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->();
-            }
-            else {
-                my $res;
-                if( @key_field ) {
-                    $res = {};
-                }
-                else {
-                    $res = [];
-                }
-                for(my $i=$#{$_[2]}; $i>=0; --$i) {
-                    my %record;
-                    for(my $j=$#{$_[2][$i]}; $j>=0; --$j) {
-                        $record{$_[1][$j][4]} = $_[2][$i][$j];
-                    }
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{mysql_insertid} = $_[2];
                     if( @key_field ) {
-                        my $h = $res;
-                        for(@key_field[0..$#key_field-1]) {
-                            $h->{$record{$_}} ||= {};
-                            $h = $h->{$record{$_}};
-                        }
-                        $h->{$record{$key_field[-1]}} = \%record;
+                        $cb->({});
                     }
                     else {
-                        push @$res, \%record;
+                        $cb->([]);
                     }
                 }
-                $cb->($res);
-            }
+                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                    $cb->();
+                }
+                else {
+                    my $res;
+                    if( @key_field ) {
+                        $res = {};
+                    }
+                    else {
+                        $res = [];
+                    }
+                    for(my $i=$#{$_[2]}; $i>=0; --$i) {
+                        my %record;
+                        for(my $j=$#{$_[2][$i]}; $j>=0; --$j) {
+                            $record{$_[1][$j][4]} = $_[2][$i][$j];
+                        }
+                        if( @key_field ) {
+                            my $h = $res;
+                            for(@key_field[0..$#key_field-1]) {
+                                $h->{$record{$_}} ||= {};
+                                $h = $h->{$record{$_}};
+                            }
+                            $h->{$record{$key_field[-1]}} = \%record;
+                        }
+                        else {
+                            push @$res, \%record;
+                        }
+                    }
+                    $cb->($res);
+                }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -549,21 +555,23 @@ sub selectcol_arrayref {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{mysql_insertid} = $_[2];
-                $cb->([]);
-            }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->();
-            }
-            else {
-                my @res = map {
-                    my $r = $_;
-                    map { $r->[$_] } @columns
-                } @{$_[2]};
-                $cb->(\@res);
-            }
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{mysql_insertid} = $_[2];
+                    $cb->([]);
+                }
+                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                    $cb->();
+                }
+                else {
+                    my @res = map {
+                        my $r = $_;
+                        map { $r->[$_] } @columns
+                    } @{$_[2]};
+                    $cb->(\@res);
+                }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -580,17 +588,19 @@ sub selectrow_array {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{mysql_insertid} = $_[2];
-                $cb->();
-            }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->();
-            }
-            else {
-                $cb->($_[2][0] ? @{$_[2][0]} : ());
-            }
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{mysql_insertid} = $_[2];
+                    $cb->();
+                }
+                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                    $cb->();
+                }
+                else {
+                    $cb->($_[2][0] ? @{$_[2][0]} : ());
+                }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -607,17 +617,19 @@ sub selectrow_arrayref {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{mysql_insertid} = $_[2];
-                $cb->(undef);
-            }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->(undef);
-            }
-            else {
-                $cb->($_[2][0]);
-            }
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{mysql_insertid} = $_[2];
+                    $cb->(undef);
+                }
+                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                    $cb->(undef);
+                }
+                else {
+                    $cb->($_[2][0]);
+                }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -634,26 +646,28 @@ sub selectrow_hashref {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{mysql_insertid} = $_[2];
-                $cb->(undef);
-            }
-            elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
-                $cb->(undef);
-            }
-            else {
-                if( $_[2][0] ) {
-                    my %record;
-                    for(my $j=$#{$_[2][0]}; $j>=0; --$j) {
-                        $record{$_[1][$j][4]} = $_[2][0][$j];
-                    }
-                    $cb->(\%record);
-                }
-                else {
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{mysql_insertid} = $_[2];
                     $cb->(undef);
                 }
-            }
+                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                    $cb->(undef);
+                }
+                else {
+                    if( $_[2][0] ) {
+                        my %record;
+                        for(my $j=$#{$_[2][0]}; $j>=0; --$j) {
+                            $record{$_[1][$j][4]} = $_[2][0][$j];
+                        }
+                        $cb->(\%record);
+                    }
+                    else {
+                        $cb->(undef);
+                    }
+                }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -690,19 +704,21 @@ sub begin_work {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, 'begin');
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{_}[TXN_STATEi] = EMPTY_TXN;
-                $cb->(1);
-            }
-            else {
-                if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{_}[TXN_STATEi] = EMPTY_TXN;
+                    $cb->(1);
                 }
                 else {
-                    _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                    if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                        _report_error($dbh, $_[1], $_[3]);
+                    }
+                    else {
+                        _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                    }
+                    $cb->();
                 }
-                $cb->();
-            }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -720,19 +736,21 @@ sub commit {
 
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, 'commit');
         AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                $dbh->{_}[TXN_STATEi] = NO_TXN;
-                $cb->(1);
-            }
-            else {
-                if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+            eval {
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                    $dbh->{_}[TXN_STATEi] = NO_TXN;
+                    $cb->(1);
                 }
                 else {
-                    _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                    if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                        _report_error($dbh, $_[1], $_[3]);
+                    }
+                    else {
+                        _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                    }
+                    $cb->();
                 }
-                $cb->();
-            }
+            };
             $next_act->();
         });
     }, $cb]);
@@ -759,19 +777,20 @@ sub _rollback {
 
     AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, 'rollback');
     AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
-        if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-            $cb->(1) if $cb;
-        }
-        else {
-            if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                _report_error($dbh, $_[1], $_[3]);
+        eval {
+            if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                $cb->(1) if $cb;
             }
             else {
-                _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                    _report_error($dbh, $_[1], $_[3]);
+                }
+                else {
+                    _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                }
+                $cb->() if $cb;
             }
-            $cb->() if $cb;
-        }
-
+        };
         $next_act->();
     });
 }
@@ -820,20 +839,22 @@ sub execute {
         my $execute = sub {
             AnyEvent::MySQL::Imp::do_execute_param($dbh->{_}[AnyEvent::MySQL::db::HDi], $sth->[IDi], \@bind_values, $sth->[PARAMi]);
             AnyEvent::MySQL::Imp::recv_response($dbh->{_}[AnyEvent::MySQL::db::HDi], execute => 1, sub {
-                if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
-                    $cb->($_[1]);
-                }
-                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_RESULT ) {
-                    $cb->(AnyEvent::MySQL::ft->new($sth->[FIELDi], $_[2]));
-                }
-                elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    AnyEvent::MySQL::db::_report_error($dbh, $_[1], $_[3]);
-                    $cb->();
-                }
-                else {
-                    AnyEvent::MySQL::db::_report_error($dbh, 2000, "Unknown response: $_[0]");
-                    $cb->();
-                }
+                eval {
+                    if( $_[0]==AnyEvent::MySQL::Imp::RES_OK ) {
+                        $cb->($_[1]);
+                    }
+                    elsif( $_[0]==AnyEvent::MySQL::Imp::RES_RESULT ) {
+                        $cb->(AnyEvent::MySQL::ft->new($sth->[FIELDi], $_[2]));
+                    }
+                    elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
+                        AnyEvent::MySQL::db::_report_error($dbh, $_[1], $_[3]);
+                        $cb->();
+                    }
+                    else {
+                        AnyEvent::MySQL::db::_report_error($dbh, 2000, "Unknown response: $_[0]");
+                        $cb->();
+                    }
+                };
                 $next_act->();
             });
         };

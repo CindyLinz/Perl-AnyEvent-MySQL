@@ -701,10 +701,17 @@ sub do_auth {
     my($hd, $username, $password, $database) = @_;
 
     recv_packet($hd, sub {
+        if( DEV ) {
+            my $hex = $_[0];
+            $hex =~ s/(.)/sprintf"%02X ",ord$1/ges;
+            my $ascii = $_[0];
+            $ascii =~ s/([^\x20-\x7E])/./g;
+            warn $hex, $ascii;
+        }
         my $proto_ver = take_num($_[0], 1); warn "proto_ver:$proto_ver" if DEV;
         my $server_ver = take_zstr($_[0]); warn "server_ver:$server_ver" if DEV;
         my $thread_id = take_num($_[0], 4); warn "thread_id:$thread_id" if DEV;
-        my $scramble_buff = take_str($_[0], 8).substr($_[0], -13, 12); warn "scramble_buff:$scramble_buff" if DEV;
+        my $scramble_buff = take_str($_[0], 8).substr($_[0], 19, 12); warn "scramble_buff:$scramble_buff" if DEV;
         my $filler = take_num($_[0], 1); warn "filler:$filler" if DEV;
         my $server_cap = take_num($_[0], 2);
         my $server_lang = take_num($_[0], 1); warn "server_lang:$server_lang" if DEV;

@@ -473,16 +473,20 @@ sub selectall_arrayref {
     }, $cb]);
 }
 
-=head2 $dbh->selectall_hashref($statement, ($key_field|\@key_field), [\%attr, [@bind_values,]] $cb->($hash_ref))
+=head2 $dbh->selectall_hashref($statement, [$key_field|\@key_field], [\%attr, [@bind_values,]] $cb->($hash_ref))
 
 =cut
 sub selectall_hashref {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
-    my($dbh, $statement, $key_field, $attr, @bind_values) = @_;
+    my($dbh, $statement, $key_field) = splice @_, 0, 3;
 
     my @key_field;
     if( ref($key_field) eq 'ARRAY' ) {
         @key_field = @$key_field;
+    }
+    elsif( ref($key_field) eq 'HASH' ) {
+        unshift @_, $key_field;
+        @key_field = ();
     }
     elsif( defined($key_field) ) {
         @key_field = ($key_field);
@@ -490,6 +494,8 @@ sub selectall_hashref {
     else {
         @key_field = ();
     }
+
+    my($attr, @bind_values) = @_;
 
     _push_task($dbh, [TXN_TASK, sub {
         my $next_act = shift;

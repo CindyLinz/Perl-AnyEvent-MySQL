@@ -18,7 +18,7 @@ use AnyEvent::MySQL;
 
 my $end = AE::cv;
 
-my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=3306", "ptest", "pass", sub {
+my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=3306", "ptest", "pass", { PrintError => 1 }, sub {
     my($dbh) = @_;
     if( $dbh ) {
         warn "Connect success!";

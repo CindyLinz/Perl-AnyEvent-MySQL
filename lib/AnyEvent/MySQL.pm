@@ -113,10 +113,11 @@ sub _unshift_task {
 }
 
 sub _report_error {
-    my($dbh, $error_num, $error_str) = @_;
+    my($dbh, $method, $error_num, $error_str) = @_;
 
     $dbh->{_}[ERRi] = $AnyEvent::MySQL::err = $error_num;
     $dbh->{_}[ERRSTRi] = $AnyEvent::MySQL::errstr = $error_str;
+    warn "$dbh $method failed: $error_str ($error_num)\n" if( $dbh->{_}[ATTRi]{PrintError} );
 
     $dbh->{_}[TXN_STATEi] = DEAD_TXN if( $dbh->{_}[TXN_STATEi]!=NO_TXN );
 }
@@ -155,7 +156,7 @@ sub _connect {
     if( $param->{host} eq '' || $param->{host} eq 'localhost' ) { # unix socket
         my $sock = $param->{mysql_socket} || `mysql_config --socket`;
         if( !$sock ) {
-            _report_error($dbh, 2002, "Can't connect to local MySQL server through socket ''");
+            _report_error($dbh, 'connect', 2002, "Can't connect to local MySQL server through socket ''");
             $cb->();
             return;
         }
@@ -183,7 +184,7 @@ sub _connect {
                     undef $wdbh->{_}[HDi];
                     undef $wdbh->{_}[CONNi];
                     $wdbh->{_}[CONN_STATEi] = IDLE_CONN;
-                    _report_error($wdbh, 2013, 'Lost connection to MySQL server during query');
+                    _report_error($wdbh, '', 2013, 'Lost connection to MySQL server during query');
                     $wdbh->{_}[TXN_STATEi] = DEAD_TXN if( $wdbh->{_}[TXN_STATEi]!=NO_TXN );
                     if( $wdbh->{_}[FALLBACKi] ) {
                         $wdbh->{_}[FALLBACKi]();
@@ -243,7 +244,7 @@ sub _process_task {
     };
     if( $task->[0]==TXN_TASK ) {
         if( $dbh->{_}[TXN_STATEi]==DEAD_TXN ) {
-            _report_error($dbh, 1402, 'Transaction branch dead');
+            _report_error($dbh, 'process_task', 1402, 'Transaction branch dead');
             $task->[2]();
             _process_task($dbh);
         }
@@ -280,7 +281,7 @@ sub _process_task {
     }
     elsif( $task->[0]==TXN_COMMIT ) {
         if( $dbh->{_}[TXN_STATEi]==DEAD_TXN ) {
-            _report_error($dbh, 1402, 'Transaction branch dead');
+            _report_error($dbh, 'process_task', 1402, 'Transaction branch dead');
             $dbh->{_}[TXN_STATEi] = NO_TXN;
             $task->[2]();
             _process_task($dbh);
@@ -404,7 +405,7 @@ sub _do {
                     $cb->($_[1]);
                 }
                 elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'do', $_[1], $_[3]);
                     $cb->();
                 }
                 else {
@@ -461,7 +462,7 @@ sub selectall_arrayref {
                     $cb->([]);
                 }
                 elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'selectall_arrayref', $_[1], $_[3]);
                     $cb->();
                 }
                 else {
@@ -512,7 +513,7 @@ sub selectall_hashref {
                     }
                 }
                 elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'selectall_hashref', $_[1], $_[3]);
                     $cb->();
                 }
                 else {
@@ -567,7 +568,7 @@ sub selectcol_arrayref {
                     $cb->([]);
                 }
                 elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'selectcol_arrayref', $_[1], $_[3]);
                     $cb->();
                 }
                 else {
@@ -600,7 +601,7 @@ sub selectrow_array {
                     $cb->();
                 }
                 elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'selectrow_array', $_[1], $_[3]);
                     $cb->();
                 }
                 else {
@@ -629,7 +630,7 @@ sub selectrow_arrayref {
                     $cb->(undef);
                 }
                 elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'selectrow_arrayref', $_[1], $_[3]);
                     $cb->(undef);
                 }
                 else {
@@ -658,7 +659,7 @@ sub selectrow_hashref {
                     $cb->(undef);
                 }
                 elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'selectrow_hashref', $_[1], $_[3]);
                     $cb->(undef);
                 }
                 else {
@@ -717,10 +718,10 @@ sub begin_work {
                 }
                 else {
                     if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                        _report_error($dbh, $_[1], $_[3]);
+                        _report_error($dbh, 'begin_work', $_[1], $_[3]);
                     }
                     else {
-                        _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                        _report_error($dbh, 'begin_work', 2000, "Unexpected result: $_[0]");
                     }
                     $cb->();
                 }
@@ -749,10 +750,10 @@ sub commit {
                 }
                 else {
                     if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                        _report_error($dbh, $_[1], $_[3]);
+                        _report_error($dbh, 'commit', $_[1], $_[3]);
                     }
                     else {
-                        _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                        _report_error($dbh, 'commit', 2000, "Unexpected result: $_[0]");
                     }
                     $cb->();
                 }
@@ -789,10 +790,10 @@ sub _rollback {
             }
             else {
                 if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                    _report_error($dbh, $_[1], $_[3]);
+                    _report_error($dbh, 'rollback', $_[1], $_[3]);
                 }
                 else {
-                    _report_error($dbh, 2000, "Unexpected result: $_[0]");
+                    _report_error($dbh, 'rollback', 2000, "Unexpected result: $_[0]");
                 }
                 $cb->() if $cb;
             }
@@ -853,11 +854,11 @@ sub execute {
                         $cb->(AnyEvent::MySQL::ft->new($sth->[FIELDi], $_[2]));
                     }
                     elsif( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                        AnyEvent::MySQL::db::_report_error($dbh, $_[1], $_[3]);
+                        AnyEvent::MySQL::db::_report_error($dbh, 'execute', $_[1], $_[3]);
                         $cb->();
                     }
                     else {
-                        AnyEvent::MySQL::db::_report_error($dbh, 2000, "Unknown response: $_[0]");
+                        AnyEvent::MySQL::db::_report_error($dbh, 'execute', 2000, "Unknown response: $_[0]");
                         $cb->();
                     }
                 };
@@ -880,11 +881,11 @@ sub execute {
                 }
                 else {
                     if( $_[0]==AnyEvent::MySQL::Imp::RES_ERROR ) {
-                        AnyEvent::MySQL::db::_report_error($dbh, $_[1], $_[3]);
+                        AnyEvent::MySQL::db::_report_error($dbh, 'execute', $_[1], $_[3]);
                         $cb->();
                     }
                     else {
-                        AnyEvent::MySQL::db::_report_error($dbh, 2000, "Unexpected response: $_[0]");
+                        AnyEvent::MySQL::db::_report_error($dbh, 'execute', 2000, "Unexpected response: $_[0]");
                         $cb->();
                     }
                 }

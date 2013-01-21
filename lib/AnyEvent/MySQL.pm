@@ -169,43 +169,46 @@ sub _connect {
         my $fh = shift;
         if( !$fh ) {
             warn "Connect to $param->{host}:$param->{port} fail: $!  retry later.";
-            undef $dbh->{_}[CONNi];
+            undef $wdbh->{_}[CONNi];
 
-            _reconnect($dbh);
+            _reconnect($wdbh);
             return;
         }
 
-        weaken( my $wdbh = $dbh );
-        $dbh->{_}[HDi] = AnyEvent::Handle->new(
+        $wdbh->{_}[HDi] = AnyEvent::Handle->new(
             fh => $fh,
             on_error => sub {
+                return if !$wdbh;
+
+                my $wwdbh = $wdbh;
                 if( $_[1] ) {
                     warn "Disconnected from $param->{host}:$param->{port} by $_[2]  reconnect later.";
-                    undef $wdbh->{_}[HDi];
-                    undef $wdbh->{_}[CONNi];
-                    $wdbh->{_}[CONN_STATEi] = IDLE_CONN;
-                    _report_error($wdbh, '', 2013, 'Lost connection to MySQL server during query');
-                    $wdbh->{_}[TXN_STATEi] = DEAD_TXN if( $wdbh->{_}[TXN_STATEi]!=NO_TXN );
-                    if( $wdbh->{_}[FALLBACKi] ) {
-                        $wdbh->{_}[FALLBACKi]();
+                    undef $wwdbh->{_}[HDi];
+                    undef $wwdbh->{_}[CONNi];
+                    $wwdbh->{_}[CONN_STATEi] = IDLE_CONN;
+                    _report_error($wwdbh, '', 2013, 'Lost connection to MySQL server during query');
+                    $wwdbh->{_}[TXN_STATEi] = DEAD_TXN if( $wwdbh->{_}[TXN_STATEi]!=NO_TXN );
+                    if( $wwdbh->{_}[FALLBACKi] ) {
+                        $wwdbh->{_}[FALLBACKi]();
                     }
                 }
             },
         );
 
-        AnyEvent::MySQL::Imp::do_auth($dbh->{_}[HDi], $dbh->{Username}, $dbh->{_}[AUTHi], $param->{database}, sub {
+        AnyEvent::MySQL::Imp::do_auth($wdbh->{_}[HDi], $wdbh->{Username}, $wdbh->{_}[AUTHi], $param->{database}, sub {
             my($success, $err_num_and_msg, $thread_id) = @_;
+            return if !$wdbh;
             if( $success ) {
-                $dbh->{mysql_thread_id} = $thread_id;
-                $cb->($dbh, guard {
-                    _process_task($dbh);
+                $wdbh->{mysql_thread_id} = $thread_id;
+                $cb->($wdbh, guard {
+                    _process_task($wdbh) if $wdbh;
                 });
             }
             else {
                 warn "MySQL auth error: $err_num_and_msg  retry later.";
-                undef $dbh->{_}[HDi];
-                undef $dbh->{_}[CONNi];
-                _reconnect($dbh, $cb);
+                undef $wdbh->{_}[HDi];
+                undef $wdbh->{_}[CONNi];
+                _reconnect($wdbh, $cb) if $wdbh;
             }
         });
     });

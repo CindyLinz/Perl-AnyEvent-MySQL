@@ -505,7 +505,7 @@ sub recv_packet {
             my $num = $len >> 24;
             $len &= 0xFFFFFF;
             print "pack_len=$len, pack_num=$num\n" if DEV;
-            $hd->unshift_read( chunk => $len, sub {
+            $_[0]->unshift_read( chunk => $len, sub {
                 $cb->($_[1]);
             } );
         } );
@@ -530,9 +530,7 @@ sub send_packet {
     return if !$_[0];
     local $_[0] = $_[0];
     my $len = reduce { $a + length($b) } 0, @_[2..$#_];
-    $_[0]->push_write(substr(pack('V', $len), 0, 3));
-    $_[0]->push_write(chr($_[1]));
-    $_[0]->push_write($_) for @_[2..$#_];
+    $_[0]->push_write(substr(pack('V', $len), 0, 3) . chr($_[1]) . join('', @_[2..$#_]));
 }
 
 # _recv_field($hd, \@field)

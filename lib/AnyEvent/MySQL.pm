@@ -174,6 +174,7 @@ sub _connect {
             _reconnect($wdbh);
             return;
         }
+        warn "Connected ($param->{host}:$param->{port})";
 
         $wdbh->{_}[HDi] = AnyEvent::Handle->new(
             fh => $fh,
@@ -187,7 +188,6 @@ sub _connect {
                     undef $wwdbh->{_}[CONNi];
                     $wwdbh->{_}[CONN_STATEi] = IDLE_CONN;
                     _report_error($wwdbh, '', 2013, 'Lost connection to MySQL server during query');
-                    $wwdbh->{_}[TXN_STATEi] = DEAD_TXN if( $wwdbh->{_}[TXN_STATEi]!=NO_TXN );
                     if( $wwdbh->{_}[FALLBACKi] ) {
                         $wwdbh->{_}[FALLBACKi]();
                     }
@@ -223,7 +223,7 @@ sub _process_task {
     weaken( my $wdbh = $dbh );
 
     if( !$dbh->{_}[HDi] ) {
-        _connect($dbh, sub { _process_task($wdbh) } );
+        _reconnect($dbh);
         return;
     }
 
@@ -243,7 +243,7 @@ sub _process_task {
         else {
             $task->[2]();
         }
-        _process_task($dbh);
+        _reconnect($dbh);
     };
     if( $task->[0]==TXN_TASK ) {
         if( $dbh->{_}[TXN_STATEi]==DEAD_TXN ) {

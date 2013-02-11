@@ -236,8 +236,9 @@ sub _process_task {
 
     $dbh->{_}[FALLBACKi] = sub {
         undef $dbh->{_}[FALLBACKi];
-        if( $dbh->{_}[TXN_STATEi]==NO_TXN ) {
-            warn "redo the task later..";
+        if( $dbh->{_}[TXN_STATEi]==NO_TXN && $task->[3]<5 ) {
+            ++$task->[3];
+            warn "redo the task later.. ($task->[3])";
             unshift @{$dbh->{_}[TASKi]}, $task;
         }
         else {

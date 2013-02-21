@@ -165,6 +165,7 @@ sub _connect {
     }
 
     warn "Connecting to $param->{host}:$param->{port} ...";
+    weaken( my $wdbh = $dbh );
     $dbh->{_}[CONNi] = tcp_connect($param->{host}, $param->{port}, sub {
         my $fh = shift;
         if( !$fh ) {

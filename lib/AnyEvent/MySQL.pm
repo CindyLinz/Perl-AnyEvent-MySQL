@@ -10,18 +10,19 @@ AnyEvent::MySQL - Pure Perl AnyEvent socket implementation of MySQL client
 
 =head1 VERSION
 
-Version 1.00
+Version 1.0.1
 
 =cut
 
-our $VERSION = '1.00';
+use version;
+our $VERSION = qv 'v1.0.1';
 
 use AnyEvent::MySQL::Imp;
 
 
 =head1 SYNOPSIS
 
-This package is used in my company since 2012 to today (2014). I thought it should be stable.
+This package is used in my company since 2012 to today (2014). I think it should be stable.
 (though some data type fetching through prepared command are not implemented)
 
 Please read the test.pl file as a usage example. >w<

@@ -1,5 +1,8 @@
 Revision history for AnyEvent-MySQL
 
+1.0.1   2014.5.19
+        Fix a word in document.
+
 1.00    2014.5.19
         First version, released on an unsuspecting world.
 

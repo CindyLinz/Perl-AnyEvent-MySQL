@@ -6,36 +6,347 @@ use warnings;
 
 =head1 NAME
 
-AnyEvent::MySQL - The great new AnyEvent::MySQL!
+AnyEvent::MySQL - Pure Perl AnyEvent socket implementation of MySQL client
 
 =head1 VERSION
 
-Version 0.01
+Version 1.00
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '1.00';
 
 use AnyEvent::MySQL::Imp;
 
 
 =head1 SYNOPSIS
 
-Quick summary of what the module does.
+This package is used in my company since 2012 to today (2014). I thought it should be stable.
+(though some data type fetching through prepared command are not implemented)
 
-Perhaps a little code snippet.
+Please read the test.pl file as a usage example. >w<
 
+    #!/usr/bin/perl
+
+    use strict;
+    use warnings;
+
+    BEGIN {
+        eval {
+            require AE;
+            require Data::Dumper;
+            require Devel::StackTrace;
+            require EV;
+        };
+        if( $@ ) {
+            warn "require module fail: $@";
+            exit;
+        }
+    }
+
+    $EV::DIED = sub {
+        print "EV::DIED: $@\n";
+        print Devel::StackTrace->new->as_string;
+    };
+
+    use lib 'lib';
     use AnyEvent::MySQL;
 
-    my $foo = AnyEvent::MySQL->new();
-    ...
+    my $end = AE::cv;
 
-=head1 EXPORT
+    my $dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=3306", "ptest", "pass", { PrintError => 1 }, sub {
+        my($dbh) = @_;
+        if( $dbh ) {
+            warn "Connect success!";
+            $dbh->pre_do("set names latin1");
+            $dbh->pre_do("set names utf8");
+        }
+        else {
+            warn "Connect fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+            $end->send;
+        }
+    });
 
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
+    $dbh->do("select * from t1 where a<=?", {}, 15, sub {
+        my $rv = shift;
+        if( defined($rv) ) {
+            warn "Do success: $rv";
+        }
+        else {
+            warn "Do fail: $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+        }
+        $end->send;
+    });
 
-=head1 SUBROUTINES/METHODS
+    #$end->recv;
+    my $end2 = AE::cv;
+
+    #$dbh->prepare("update t1 set a=1 where b=1", sub {
+    #$dbh->prepare("select * from t1", sub {
+    my $sth = $dbh->prepare("select b, a aaa from t1 where a>?", sub {
+    #$dbh->prepare("select * from type_all", sub {
+        warn "prepared!";
+        $end2->send;
+    });
+
+    #$end2->recv;
+
+    my $end3 = AE::cv;
+
+    $sth->execute(1, sub {
+        warn "executed! $_[0]";
+        $end3->send($_[0]);
+    });
+
+    my $fth = $end3->recv;
+
+    my $end4 = AE::cv;
+
+    $fth->bind_col(2, \my $a, sub {
+        warn $_[0];
+    });
+    my $fetch; $fetch = sub {
+        $fth->fetch(sub {
+            if( $_[0] ) {
+                warn "Get! $a";
+                $fetch->();
+            }
+            else {
+                warn "Get End!";
+                undef $fetch;
+                $end4->send;
+            }
+        });
+    }; $fetch->();
+
+    #$fth->bind_columns(\my($a, $b), sub {
+    #    warn $_[0];
+    #    warn $AnyEvent::MySQL::errstr;
+    #});
+    #my $fetch; $fetch = sub {
+    #    $fth->fetch(sub {
+    #        if( $_[0] ) {
+    #            warn "Get! ($a, $b)";
+    #            $fetch->();
+    #        }
+    #        else {
+    #            undef $fetch;
+    #            $end4->send;
+    #        }
+    #    });
+    #}; $fetch->();
+
+    #my $fetch; $fetch = sub {
+    #    $fth->fetchrow_array(sub {
+    #        if( @_ ) {
+    #            warn "Get! (@_)";
+    #            $fetch->();
+    #        }
+    #        else {
+    #            undef $fetch;
+    #            $end4->send;
+    #        }
+    #    });
+    #}; $fetch->();
+
+    #my $fetch; $fetch = sub {
+    #    $fth->fetchrow_arrayref(sub {
+    #        if( $_[0] ) {
+    #            warn "Get! (@{$_[0]})";
+    #            $fetch->();
+    #        }
+    #        else {
+    #            undef $fetch;
+    #            $end4->send;
+    #        }
+    #    });
+    #}; $fetch->();
+
+    #my $fetch; $fetch = sub {
+    #    $fth->fetchrow_hashref(sub {
+    #        if( $_[0] ) {
+    #            warn "Get! (@{[%{$_[0]}]})";
+    #            $fetch->();
+    #        }
+    #        else {
+    #            undef $fetch;
+    #            $end4->send;
+    #        }
+    #    });
+    #}; $fetch->();
+
+    $end4->recv;
+
+    #tcp_connect 0, 3306, sub {
+    #    my $fh = shift;
+    #    my $hd = AnyEvent::Handle->new( fh => $fh );
+    #    AnyEvent::MySQL::Imp::do_auth($hd, 'tiwi', '', sub {
+    #        undef $hd;
+    #        warn $_[0];
+    #        $end->send;
+    #    });
+    #};
+
+    my $end5 = AE::cv;
+
+    $dbh->selectall_arrayref("select a*2, b from t1 where a<=?", {}, 15, sub {
+        warn "selectall_arrayref";
+        warn Dumper($_[0]);
+    });
+
+    $dbh->selectall_hashref("select a*2, b from t1", 'b', sub {
+        warn "selectall_hashref";
+        warn Dumper($_[0]);
+    });
+
+    $dbh->selectall_hashref("select a*2, b from t1", ['b', 'a*2'], sub {
+        warn "selectall_hashref";
+        warn Dumper($_[0]);
+    });
+
+    $dbh->selectall_hashref("select a*2, b from t1", sub {
+        warn "selectall_hashref";
+        warn Dumper($_[0]);
+    });
+
+    $dbh->selectcol_arrayref("select a*2, b from t1", { Columns => [1,2,1] }, sub {
+        warn "selectcol_arrayref";
+        warn Dumper($_[0]);
+    });
+
+    $dbh->selectall_arrayref("select * from t3", sub {
+        warn "selectall_arrayref t3";
+        warn Dumper($_[0]);
+    });
+
+    $dbh->selectrow_array("select * from t1 where a>? order by a", {}, 2, sub {
+        warn "selectrow_array";
+        warn Dumper(\@_);
+    });
+
+    $dbh->selectrow_arrayref("select * from t1 where a>? order by a", {}, 2, sub {
+        warn "selectrow_arrayref";
+        warn Dumper($_[0]);
+    });
+
+    $dbh->selectrow_hashref("select * from t1 where a>? order by a", {}, 2, sub {
+        warn "selectrow_hashref";
+        warn Dumper($_[0]);
+    });
+
+    my $st = $dbh->prepare("select * from t1 where a>? order by a");
+
+    $st->execute(2, sub {
+        warn "fetchall_arrayref";
+        warn Dumper($_[0]->fetchall_arrayref());
+    });
+
+    $st->execute(2, sub {
+        warn "fetchall_hashref(a)";
+        warn Dumper($_[0]->fetchall_hashref('a'));
+    });
+
+    $st->execute(2, sub {
+        warn "fetchall_hashref";
+        warn Dumper($_[0]->fetchall_hashref());
+    });
+
+    $st->execute(2, sub {
+        warn "fetchcol_arrayref";
+        warn Dumper($_[0]->fetchcol_arrayref());
+    });
+
+    $dbh->begin_work( sub {
+        warn "txn begin.. @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+    } );
+
+    $dbh->do("update t1 set a=? b=?", {}, 3, 4, sub {
+        warn "error update @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+    } );
+
+    $dbh->do("update t1 set b=b+1", {}, sub {
+        warn "after error update @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+    } );
+
+    $dbh->commit( sub {
+        warn "aborted commit @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+    } );
+
+    $dbh->do("update t1 set b=b+1", {}, sub {
+        warn "after aborted commit @_ | $AnyEvent::MySQL::errstr ($AnyEvent::MySQL::err)";
+        $end5->send;
+    } );
+
+    #my $txh = $dbh->begin_work(sub {
+    #    warn "txn begin.. @_";
+    #});
+    #
+    #$dbh->do("insert into t1 values (50,50)", { Tx => $txh }, sub {
+    #    warn "insert in txn @_ insertid=".$dbh->last_insert_id;
+    #});
+    #
+    #$txh->rollback(sub {
+    #    warn "rollback txn @_";
+    #});
+    #
+    #$dbh->selectall_arrayref("select * from t1", sub {
+    #    warn "check rollback txn: ".Dumper($_[0]);
+    #});
+    #
+    #my $txh2 = $dbh->begin_work(sub {
+    #    warn "txn2 begin.. @_";
+    #});
+    #
+    #$dbh->do("insert into t1 values (50,50)", { Tx => $txh2 }, sub {
+    #    warn "insert in txn2 @_ insertid=".$dbh->last_insert_id;
+    #});
+    #
+    #$txh2->commit(sub {
+    #    warn "commit txn2 @_";
+    #});
+    #
+    #$dbh->selectall_arrayref("select * from t1", sub {
+    #    warn "check commit txn: ".Dumper($_[0]);
+    #});
+    #
+    #$dbh->do("delete from t1 where a=50", sub {
+    #    warn "remove the effect @_";
+    #});
+    #
+    #my $update_st;
+    #
+    #my $txh3; $txh3 = $dbh->begin_work(sub {
+    #    warn "txn3 begin.. @_";
+    #});
+    #
+    #    $update_st = $dbh->prepare("insert into t1 values (?,?)", sub {
+    #        warn "prepare insert @_";
+    #    });
+    #    $update_st->execute(60, 60, { Tx => $txh3 }, sub {
+    #        warn "insert 60 @_";
+    #    });
+    #
+    #    $dbh->selectall_arrayref("select * from t1", { Tx => $txh3 }, sub {
+    #        warn "select in txn3: ".Dumper($_[0]);
+    #    });
+    #
+    #    $txh3->rollback(sub {
+    #        warn "txh3 rollback @_";
+    #    });
+    #
+    #    $dbh->selectall_arrayref("select * from t1", sub {
+    #        warn "select out txn3: ".Dumper($_[0]);
+    #    });
+
+    #$st_all = $dbh->prepare("select `date`, `time`, `datetime`, `timestamp` from all_type", sub {
+    #    warn "prepare st_all @_";
+    #});
+    #
+    #$st_all->execute
+
+    $end5->recv;
+
+    $end->recv;
 
 =cut
 
@@ -1171,17 +1482,9 @@ You can also look for information at:
 
 =over 4
 
-=item * RT: CPAN's request tracker (report bugs here)
+=item * github
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=AnyEvent-MySQL>
-
-=item * AnnoCPAN: Annotated CPAN documentation
-
-L<http://annocpan.org/dist/AnyEvent-MySQL>
-
-=item * CPAN Ratings
-
-L<http://cpanratings.perl.org/d/AnyEvent-MySQL>
+L<https://github.com/CindyLinz/Perl-AnyEvent-MySQL>
 
 =item * Search CPAN
 
@@ -1195,7 +1498,7 @@ L<http://search.cpan.org/dist/AnyEvent-MySQL/>
 
 =head1 LICENSE AND COPYRIGHT
 
-Copyright 2011 Cindy Wang (CindyLinz).
+Copyright 2011-2014 Cindy Wang (CindyLinz).
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of either: the GNU General Public License as published

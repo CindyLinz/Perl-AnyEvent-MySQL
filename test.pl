@@ -3,10 +3,18 @@
 use strict;
 use warnings;
 
-use AE;
-use Data::Dumper;
-use Devel::StackTrace;
-use EV;
+BEGIN {
+    eval {
+        require AE;
+        require Data::Dumper;
+        require Devel::StackTrace;
+        require EV;
+    };
+    if( $@ ) {
+        warn "require module fail: $@";
+        exit;
+    }
+}
 
 $EV::DIED = sub {
     print "EV::DIED: $@\n";

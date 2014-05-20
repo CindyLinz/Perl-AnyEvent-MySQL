@@ -17,6 +17,7 @@ WriteMakefile(
         'AnyEvent' => 0,
         'Digest::SHA1' => 0,
         'Guard' => 0,
+        'Devel::StackTrace' => 0,
     },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean               => { FILES => 'AnyEvent-MySQL-*' },

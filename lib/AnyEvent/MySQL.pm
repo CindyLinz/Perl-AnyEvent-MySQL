@@ -10,12 +10,12 @@ AnyEvent::MySQL - Pure Perl AnyEvent socket implementation of MySQL client
 
 =head1 VERSION
 
-Version 1.0.1
+Version 1.1.0
 
 =cut
 
 use version;
-our $VERSION = qv 'v1.0.1';
+our $VERSION = qv 'v1.1.0';
 
 use AnyEvent::MySQL::Imp;
 

@@ -1,5 +1,8 @@
 Revision history for AnyEvent-MySQL
 
+1.2.0   2014.5.21
+        Add document for passing POD test
+
 1.1.0   2014.5.20
         Fix dependency to Devel::StackTrace in Makefile.PL
 

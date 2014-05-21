@@ -132,13 +132,17 @@ use constant {
     RES_PREPARE => 2,
 };
 
-# $str = take_zstring($data(modified)) - null terminated string
+=head2 $str = take_zstring($data(modified))
+null terminated string
+=cut
 sub take_zstr {
     $_[0] =~ s/(.*?)\x00//s;
     return $1;
 }
 
-# $num = take_lcb($data(modifed)) - length coded binary
+=head2 $num = take_lcb($data(modifed))
+length coded binary
+=cut
 sub take_lcb {
     my $fb = substr($_[0], 0, 1, '');
     if( $fb le "\xFA" ) { # 0-250
@@ -159,7 +163,9 @@ sub take_lcb {
     return undef; # error
 }
 
-# $str = take_lcs($data(modified)) - length coded string
+=head2 $str = take_lcs($data(modified))
+length coded string
+=cut
 sub take_lcs {
     my $len = &take_lcb;
     if( defined $len ) {
@@ -170,23 +176,28 @@ sub take_lcs {
     }
 }
 
-# $num = take_num($data(modified), $len)
+=head2 $num = take_num($data(modified), $len)
+=cut
 sub take_num {
     return unpack('V', substr($_[0], 0, $_[1], '')."\x00\x00\x00");
 }
 
-# $str = take_str($data(modified), $len)
+=head2 $str = take_str($data(modified), $len)
+=cut
 sub take_str {
     return substr($_[0], 0, $_[1], '');
 }
 
-# () = take_filler($data(modified), $len)
+=head2 () = take_filler($data(modified), $len)
+=cut
 sub take_filler {
     substr($_[0], 0, $_[1], '');
     return ();
 }
 
-# $cell = take_type($data(modified), $type, $length, $flag)
+=head2 $cell = take_type($data(modified), $type, $length, $flag)
+WARN: some MySQL data types are not implemented
+=cut
 sub take_type {
     given($_[1]) {
         when(MYSQL_TYPE_TINY) { # tinyint
@@ -302,7 +313,8 @@ sub take_type {
     }
 }
 
-# put_type($data(modified), $cell, $type, $len, $flag)
+=head2 put_type($data(modified), $cell, $type, $len, $flag)
+=cut
 sub put_type {
     given($_[2]) {
         when(MYSQL_TYPE_TINY) { # tinyint
@@ -401,24 +413,28 @@ sub put_type {
     }
 }
 
-# put_num($data(modified), $num, $len)
+=head2 put_num($data(modified), $num, $len)
+=cut
 sub put_num {
     $_[0] .= substr(pack('V', $_[1]), 0, $_[2]);
 }
 
-# put_str($data(modified), $str, $len)
+=head2 put_str($data(modified), $str, $len)
+=cut
 sub put_str {
     $_[0] .= substr($_[1].("\x00" x $_[2]), 0, $_[2]);
 }
 
-# put_zstr($data(modified), $str)
+=head2 put_zstr($data(modified), $str)
+=cut
 sub put_zstr {
     no warnings 'uninitialized';
     $_[0] .= $_[1];
     $_[0] .= "\x00";
 }
 
-# put_lcb($data(modified), $num)
+=head2 put_lcb($data(modified), $num)
+=cut
 sub put_lcb {
     if( $_[1] <= 250 ) {
         $_[0] .= chr($_[1]);
@@ -440,13 +456,15 @@ sub put_lcb {
     }
 }
 
-# put_lcs($data(modified), $str)
+=head2 put_lcs($data(modified), $str)
+=cut
 sub put_lcs {
     put_lcb($_[0], length($_[1]));
     $_[0] .= $_[1];
 }
 
-# ($affected_rows, $insert_id, $server_status, $warning_count, $message) | $is = parse_ok($data(modified))
+=head2 ($affected_rows, $insert_id, $server_status, $warning_count, $message) | $is = parse_ok($data(modified))
+=cut
 sub parse_ok {
     if( substr($_[0], 0, 1) eq "\x00" ) {
         if( wantarray ) {
@@ -468,7 +486,8 @@ sub parse_ok {
     }
 }
 
-# ($errno, $sqlstate, $message) = parse_error($data(modified))
+=head2 ($errno, $sqlstate, $message) = parse_error($data(modified))
+=cut
 sub parse_error {
     if( substr($_[0], 0, 1) eq "\xFF" ) {
         if( wantarray ) {
@@ -495,7 +514,8 @@ sub parse_error {
 #    if( $substr($_[0], 0, 1) 
 #}
 
-# recv_packet($hd, $cb->($packet))
+=head2 recv_packet($hd, $cb->($packet))
+=cut
 sub recv_packet {
     my $cb = pop;
     my($hd) = @_;
@@ -512,7 +532,8 @@ sub recv_packet {
     }
 }
 
-# skip_until_eof($hd, $cb->())
+=head2 skip_until_eof($hd, $cb->())
+=cut
 sub skip_until_eof {
     my($hd, $cb) = @_;
     recv_packet($hd, sub {
@@ -525,7 +546,8 @@ sub skip_until_eof {
     });
 }
 
-# send_packet($hd, $packet_num, $packet_frag1, $pack_frag2, ...)
+=head2 send_packet($hd, $packet_num, $packet_frag1, $pack_frag2, ...)
+=cut
 sub send_packet {
     return if !$_[0];
     local $_[0] = $_[0];
@@ -533,7 +555,8 @@ sub send_packet {
     $_[0]->push_write(substr(pack('V', $len), 0, 3) . chr($_[1]) . join('', @_[2..$#_]));
 }
 
-# _recv_field($hd, \@field)
+=head2 _recv_field($hd, \@field)
+=cut
 sub _recv_field {
     warn "get field." if DEV;
     my $field = $_[1];
@@ -554,17 +577,18 @@ sub _recv_field {
     });
 }
 
-# recv_response($hd, %opt, $cb->(TYPE, data...))
-#  RES_OK, $affected_rows, $insert_id, $server_status, $warning_count, $message
-#  RES_ERROR, $errno, $sqlstate, $message
-#  RES_RESULT, \@field, \@row
-#   $field[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
-#   $row[$i] = [$field, $field, $field, ...]
-#  RES_PREPARE, $stmt_id, \@param, \@column, $warning_count
-#   $param[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
-#   $column[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
-# opt:
-#  prepare (set to truthy to recv prepare_ok)
+=head2 recv_response($hd, %opt, $cb->(TYPE, data...))
+  RES_OK, $affected_rows, $insert_id, $server_status, $warning_count, $message
+  RES_ERROR, $errno, $sqlstate, $message
+  RES_RESULT, \@field, \@row
+   $field[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
+   $row[$i] = [$field, $field, $field, ...]
+  RES_PREPARE, $stmt_id, \@param, \@column, $warning_count
+   $param[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
+   $column[$i] = [$catalog, $db, $table, $org_table, $name, $org_name, $charsetnr, $length, $type, $flags, $decimals, $default]
+ opt:
+  prepare (set to truthy to recv prepare_ok)
+=cut
 sub recv_response {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : sub {};
     my($hd, %opt) = @_;
@@ -693,7 +717,8 @@ sub recv_response {
     });
 }
 
-# do_auth($hd, $username, [$password, [$database,]] $cb->($success, $err_num_and_msg, $thread_id))
+=head2 do_auth($hd, $username, [$password, [$database,]] $cb->($success, $err_num_and_msg, $thread_id))
+=cut
 sub do_auth {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : sub {};
     my($hd, $username, $password, $database) = @_;
@@ -787,14 +812,16 @@ sub do_auth {
     });
 }
 
-# do_reset_stmt($hd, $stmt_id)
+=head2 do_reset_stmt($hd, $stmt_id)
+=cut
 sub do_reset_stmt {
     my $packet = '';
     put_num($packet, $_[1], 4);
     send_packet($_[0], 0, COM_STMT_RESET, $packet);
 }
 
-# do_long_data_packet($hd, $stmt_id, $param_num, $type, $data, $len, $flag, $packet_num)
+=head2 do_long_data_packet($hd, $stmt_id, $param_num, $type, $data, $len, $flag, $packet_num)
+=cut
 sub do_long_data_packet {
     my $packet = '';
     put_num($packet, $_[1], 4);
@@ -804,7 +831,8 @@ sub do_long_data_packet {
     send_packet($_[0], $_[7], COM_STMT_SEND_LONG_DATA, $packet);
 }
 
-# do_execute($hd, $stmt_id, $null_bit_map, $packet_num)
+=head2 do_execute($hd, $stmt_id, $null_bit_map, $packet_num)
+=cut
 sub do_execute {
     my $packet = '';
     put_num($packet, $_[1], 4);
@@ -814,7 +842,8 @@ sub do_execute {
     send_packet($_[0], $_[3], COM_STMT_EXECUTE, $packet);
 }
 
-# do_execute_param($hd, $stmt_id, \@param, \@param_config)
+=head2 do_execute_param($hd, $stmt_id, \@param, \@param_config)
+=cut
 sub do_execute_param {
     my $null_bit_map = pack('b*', join '', map { defined($_) ? '0' : '1' } @{$_[2]});
     my $packet = '';

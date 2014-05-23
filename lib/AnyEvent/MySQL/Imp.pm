@@ -10,8 +10,6 @@ use Digest::SHA1 qw(sha1);
 use List::Util qw(reduce);
 use Scalar::Util qw(dualvar);
 
-use feature qw(switch);
-
 use constant {
     DEV => 0,
 };
@@ -199,217 +197,181 @@ sub take_filler {
 WARN: some MySQL data types are not implemented
 =cut
 sub take_type {
-    given($_[1]) {
-        when(MYSQL_TYPE_TINY) { # tinyint
-            if( $_[3] & UNSIGNED_FLAG ) {
-                return ord(substr($_[0], 0, 1, ''));
-            }
-            else {
-                return unpack('c', substr($_[0], 0, 1, ''));
-            }
+    if( $_[1]==MYSQL_TYPE_TINY ) { # tinyint
+        if( $_[3] & UNSIGNED_FLAG ) {
+            return ord(substr($_[0], 0, 1, ''));
         }
-        when(MYSQL_TYPE_SHORT) { # smallint
-            if( $_[3] & UNSIGNED_FLAG ) {
-                return unpack('v', substr($_[0], 0, 2, ''));
-            }
-            else {
-                return unpack('s<', substr($_[0], 0, 2, ''));
-            }
+        else {
+            return unpack('c', substr($_[0], 0, 1, ''));
         }
-        when(MYSQL_TYPE_INT24) { # mediumint
-            if( $_[3] & UNSIGNED_FLAG ) {
-                return unpack('V', substr($_[0], 0, 3, '')."\0");
-            }
-            else {
-                return unpack('l<', substr($_[0], 0, 3, '')."\0");
-            }
+    } elsif( $_[1]==MYSQL_TYPE_SHORT ) { # smallint
+        if( $_[3] & UNSIGNED_FLAG ) {
+            return unpack('v', substr($_[0], 0, 2, ''));
         }
-        when(MYSQL_TYPE_LONG) { # int
-            if( $_[3] & UNSIGNED_FLAG ) {
-                return unpack('V', substr($_[0], 0, 4, ''));
-            }
-            else {
-                return unpack('l<', substr($_[0], 0, 4, ''));
-            }
+        else {
+            return unpack('s<', substr($_[0], 0, 2, ''));
         }
-        when(MYSQL_TYPE_LONGLONG) { # bigint
-            if( $_[3] & UNSIGNED_FLAG ) {
-                return unpack('Q<', substr($_[0], 0, 8, ''));
-            }
-            else {
-                return unpack('q<', substr($_[0], 0, 8, ''));
-            }
+    } elsif( $_[1]==MYSQL_TYPE_INT24 ) { # mediumint
+        if( $_[3] & UNSIGNED_FLAG ) {
+            return unpack('V', substr($_[0], 0, 3, '')."\0");
         }
-        when(MYSQL_TYPE_FLOAT) { # float
-            return unpack('f<', substr($_[0], 0, 4, ''));
+        else {
+            return unpack('l<', substr($_[0], 0, 3, '')."\0");
         }
-        when(MYSQL_TYPE_DOUBLE) { # double
-            return unpack('d<', substr($_[0], 0, 8, ''));
+    } elsif( $_[1]==MYSQL_TYPE_LONG ) { # int
+        if( $_[3] & UNSIGNED_FLAG ) {
+            return unpack('V', substr($_[0], 0, 4, ''));
         }
-        when(MYSQL_TYPE_NEWDECIMAL) { # decimal, numeric
-            warn "Not implement DECIMAL,NUMERIC yet";
+        else {
+            return unpack('l<', substr($_[0], 0, 4, ''));
+        }
+    } elsif( $_[1]==MYSQL_TYPE_LONGLONG ) { # bigint
+        if( $_[3] & UNSIGNED_FLAG ) {
+            return unpack('Q<', substr($_[0], 0, 8, ''));
+        }
+        else {
+            return unpack('q<', substr($_[0], 0, 8, ''));
+        }
+    } elsif( $_[1]==MYSQL_TYPE_FLOAT ) { # float
+        return unpack('f<', substr($_[0], 0, 4, ''));
+    } elsif( $_[1]==MYSQL_TYPE_DOUBLE ) { # double
+        return unpack('d<', substr($_[0], 0, 8, ''));
+    } elsif( $_[1]==MYSQL_TYPE_NEWDECIMAL ) { # decimal, numeric
+        warn "Not implement DECIMAL,NUMERIC yet";
+        return;
+    } elsif( $_[1]==MYSQL_TYPE_BIT ) { # bit(n)
+        warn "Not implement BIT yet";
+        return;
+    } elsif( $_[1]==MYSQL_TYPE_DATE ) { # date
+        warn "Not implement DATE yet";
+        return;
+    } elsif( $_[1]==MYSQL_TYPE_TIME ) { # time
+        warn "Not implement TIME yet";
+        return;
+    } elsif( $_[1]==MYSQL_TYPE_DATETIME ) { # datetime
+        warn "Not implement DATETIME yet";
+        return;
+    } elsif( $_[1]==MYSQL_TYPE_TIMESTAMP ) { # timestamp
+        warn "Not implement TIMESTAMP yet";
+        return;
+    } elsif( $_[1]==MYSQL_TYPE_YEAR ) { # year
+        return 1901+ord(substr($_[0], 0, 1, ''));
+    } elsif( $_[1]==MYSQL_TYPE_STRING ) { # char(n), binary(n), enum(), set()
+        if( $_[3] & ENUM_FLAG ) {
+            warn "Not implement ENUM yet";
             return;
         }
-        when(MYSQL_TYPE_BIT) { # bit(n)
-            warn "Not implement BIT yet";
+        elsif( $_[3] & SET_FLAG ) {
+            warn "Not implement SET yet";
             return;
         }
-        when(MYSQL_TYPE_DATE) { # date
-            warn "Not implement DATE yet";
-            return;
+        else {
+            my $data = substr($_[0], 0, $_[2], '');
+            $data =~ s/ +$//;
+            return $data;
         }
-        when(MYSQL_TYPE_TIME) { # time
-            warn "Not implement TIME yet";
-            return;
+    } elsif( $_[1]==[ MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_BLOB]) { # varchar(n), varbinary(n) | tinyblob, tinytext, blob, text, mediumblob, mediumtext, longblob, longtext
+        my $len;
+        if( $_[2]<=0xFF ) {
+            $len = ord(substr($_[0], 0, 1, ''));
         }
-        when(MYSQL_TYPE_DATETIME) { # datetime
-            warn "Not implement DATETIME yet";
-            return;
+        elsif( $_[2]<=0xFFFF ) {
+            $len = unpack('v', substr($_[0], 0, 2, ''));
         }
-        when(MYSQL_TYPE_TIMESTAMP) { # timestamp
-            warn "Not implement TIMESTAMP yet";
-            return;
+        elsif( $_[2]<=0xFFFFFF ) {
+            $len = unpack('V', substr($_[0], 0, 3, '')."\0");
         }
-        when(MYSQL_TYPE_YEAR) { # year
-            return 1901+ord(substr($_[0], 0, 1, ''));
+        else {
+            $len = unpack('V', substr($_[0], 0, 4, ''));
         }
-        when(MYSQL_TYPE_STRING) { # char(n), binary(n), enum(), set()
-            if( $_[3] & ENUM_FLAG ) {
-                warn "Not implement ENUM yet";
-                return;
-            }
-            elsif( $_[3] & SET_FLAG ) {
-                warn "Not implement SET yet";
-                return;
-            }
-            else {
-                my $data = substr($_[0], 0, $_[2], '');
-                $data =~ s/ +$//;
-                return $data;
-            }
-        }
-        when([MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_BLOB]) { # varchar(n), varbinary(n) | tinyblob, tinytext, blob, text, mediumblob, mediumtext, longblob, longtext
-            my $len;
-            if( $_[2]<=0xFF ) {
-                $len = ord(substr($_[0], 0, 1, ''));
-            }
-            elsif( $_[2]<=0xFFFF ) {
-                $len = unpack('v', substr($_[0], 0, 2, ''));
-            }
-            elsif( $_[2]<=0xFFFFFF ) {
-                $len = unpack('V', substr($_[0], 0, 3, '')."\0");
-            }
-            else {
-                $len = unpack('V', substr($_[0], 0, 4, ''));
-            }
-            return substr($_[0], 0, $len, '');
-        }
-        default {
-            warn "Unsupported type: $_";
-            use Devel::StackTrace;
-            print Devel::StackTrace->new->as_string;
-            return;
-        }
+        return substr($_[0], 0, $len, '');
+    } else {
+        warn "Unsupported type: $_";
+        use Devel::StackTrace;
+        print Devel::StackTrace->new->as_string;
+        return;
     }
 }
 
 =head2 put_type($data(modified), $cell, $type, $len, $flag)
 =cut
 sub put_type {
-    given($_[2]) {
-        when(MYSQL_TYPE_TINY) { # tinyint
-            if( $_[4] & UNSIGNED_FLAG ) {
-                $_[0] .= chr($_[1]);
+    if( $_[2]==MYSQL_TYPE_TINY ) { # tinyint
+        if( $_[4] & UNSIGNED_FLAG ) {
+            $_[0] .= chr($_[1]);
+        }
+        else {
+            $_[0] .= pack('c', $_[1]);
+        }
+    } elsif( $_[2]==MYSQL_TYPE_SHORT ) { # smallint
+        $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'v' : 's<' , $_[1]);
+    } elsif( $_[2]==MYSQL_TYPE_INT24 ) { # mediumint
+        $_[0] .= substr(pack( $_[4] & UNSIGNED_FLAG ? 'V' : 'l<' , $_[1]), 0, 3);
+    } elsif( $_[2]==MYSQL_TYPE_LONG ) { # int
+        $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'V' : 'l<' , $_[1] );
+    } elsif( $_[2]==MYSQL_TYPE_LONGLONG ) { # bigint
+        $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'Q<' : 'q<' , $_[1] );
+    } elsif( $_[2]==MYSQL_TYPE_FLOAT ) { # float
+        $_[0] .= pack('f<', $_[1]);
+    } elsif( $_[2]==MYSQL_TYPE_DOUBLE ) { # double
+        $_[0] .= pack('d<', $_[1]);
+    } elsif( $_[2]==MYSQL_TYPE_NEWDECIMAL ) { # decimal, numeric
+        warn "Not implement DECIMAL,NUMERIC yet";
+        return;
+    } elsif( $_[2]==MYSQL_TYPE_BIT ) { # bit(n)
+        warn "Not implement BIT yet";
+        return;
+    } elsif( $_[2]==MYSQL_TYPE_DATE ) { # date
+        warn "Not implement DATE yet";
+        return;
+    } elsif( $_[2]==MYSQL_TYPE_TIME ) { # time
+        warn "Not implement TIME yet";
+        return;
+    } elsif( $_[2]==MYSQL_TYPE_DATETIME ) { # datetime
+        warn "Not implement DATETIME yet";
+        return;
+    } elsif( $_[2]==MYSQL_TYPE_TIMESTAMP ) { # timestamp
+        warn "Not implement TIMESTAMP yet";
+        return;
+    } elsif( $_[2]==MYSQL_TYPE_YEAR ) { # year
+        $_[0] .= chr($_[1]-1901);
+    } elsif( $_[2]==MYSQL_TYPE_STRING ) { # char(n), binary(n), enum(), set()
+        if( $_[4] & ENUM_FLAG ) {
+            warn "Not implement ENUM yet";
+            return;
+        }
+        elsif( $_[4] & SET_FLAG ) {
+            warn "Not implement SET yet";
+            return;
+        }
+        else {
+            if( length($_[1]) >= $_[3] ) {
+                $_[0] .= substr($_[1], 0, $_[3]);
             }
             else {
-                $_[0] .= pack('c', $_[1]);
+                $_[0] .= $_[1];
+                $_[0] .= ' ' x ($_[3] - length $_[1]);
             }
         }
-        when(MYSQL_TYPE_SHORT) { # smallint
-            $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'v' : 's<' , $_[1]);
+    } elsif( $_[2]==[ MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_BLOB]) { # varchar(n), varbinary(n) | tinyblob, tinytext, blob, text, mediumblob, mediumtext, longblob, longtext
+        my $len;
+        $_[1] = substr($_[1], 0, $_[3]) if( length($_[1]) > $_[3] );
+        if( $_[3]<=0xFF ) {
+            $_[0] .= chr(length($_[1]));
         }
-        when(MYSQL_TYPE_INT24) { # mediumint
-            $_[0] .= substr(pack( $_[4] & UNSIGNED_FLAG ? 'V' : 'l<' , $_[1]), 0, 3);
+        elsif( $_[3]<=0xFFFF ) {
+            $_[0] .= pack('v', length($_[1]));
         }
-        when(MYSQL_TYPE_LONG) { # int
-            $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'V' : 'l<' , $_[1] );
+        elsif( $_[3]<=0xFFFFFF ) {
+            $_[0] .= substr(pack('V', length($_[1])), 0, 3);
         }
-        when(MYSQL_TYPE_LONGLONG) { # bigint
-            $_[0] .= pack( $_[4] & UNSIGNED_FLAG ? 'Q<' : 'q<' , $_[1] );
+        else {
+            $_[0] .= pack('V', length($_[1]));
         }
-        when(MYSQL_TYPE_FLOAT) { # float
-            $_[0] .= pack('f<', $_[1]);
-        }
-        when(MYSQL_TYPE_DOUBLE) { # double
-            $_[0] .= pack('d<', $_[1]);
-        }
-        when(MYSQL_TYPE_NEWDECIMAL) { # decimal, numeric
-            warn "Not implement DECIMAL,NUMERIC yet";
-            return;
-        }
-        when(MYSQL_TYPE_BIT) { # bit(n)
-            warn "Not implement BIT yet";
-            return;
-        }
-        when(MYSQL_TYPE_DATE) { # date
-            warn "Not implement DATE yet";
-            return;
-        }
-        when(MYSQL_TYPE_TIME) { # time
-            warn "Not implement TIME yet";
-            return;
-        }
-        when(MYSQL_TYPE_DATETIME) { # datetime
-            warn "Not implement DATETIME yet";
-            return;
-        }
-        when(MYSQL_TYPE_TIMESTAMP) { # timestamp
-            warn "Not implement TIMESTAMP yet";
-            return;
-        }
-        when(MYSQL_TYPE_YEAR) { # year
-            $_[0] .= chr($_[1]-1901);
-        }
-        when(MYSQL_TYPE_STRING) { # char(n), binary(n), enum(), set()
-            if( $_[4] & ENUM_FLAG ) {
-                warn "Not implement ENUM yet";
-                return;
-            }
-            elsif( $_[4] & SET_FLAG ) {
-                warn "Not implement SET yet";
-                return;
-            }
-            else {
-                if( length($_[1]) >= $_[3] ) {
-                    $_[0] .= substr($_[1], 0, $_[3]);
-                }
-                else {
-                    $_[0] .= $_[1];
-                    $_[0] .= ' ' x ($_[3] - length $_[1]);
-                }
-            }
-        }
-        when([MYSQL_TYPE_VAR_STRING, MYSQL_TYPE_BLOB]) { # varchar(n), varbinary(n) | tinyblob, tinytext, blob, text, mediumblob, mediumtext, longblob, longtext
-            my $len;
-            $_[1] = substr($_[1], 0, $_[3]) if( length($_[1]) > $_[3] );
-            if( $_[3]<=0xFF ) {
-                $_[0] .= chr(length($_[1]));
-            }
-            elsif( $_[3]<=0xFFFF ) {
-                $_[0] .= pack('v', length($_[1]));
-            }
-            elsif( $_[3]<=0xFFFFFF ) {
-                $_[0] .= substr(pack('V', length($_[1])), 0, 3);
-            }
-            else {
-                $_[0] .= pack('V', length($_[1]));
-            }
-            $_[0] .= $_[1];
-        }
-        default {
-            warn "Unsupported type: $_[2]";
-            return;
-        }
+        $_[0] .= $_[1];
+    } else {
+        warn "Unsupported type: $_[2]";
+        return;
     }
 }
 

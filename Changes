@@ -1,6 +1,9 @@
 Revision history for AnyEvent-MySQL
 
-1.2.0   2014.5.21
+1.1.3   2014.5.23
+        Remove feature switch (given..when) to if..elsif..else
+
+1.1.2   2014.5.21
         Add document for passing POD test
 
 1.1.0   2014.5.20

@@ -1,5 +1,9 @@
 Revision history for AnyEvent-MySQL
 
+1.1.4   2014.12.9
+        Fix a bug (client default charset field) on handshake protocol.
+        Thanks to nsnake@github for reporting.
+
 1.1.3   2014.5.23
         Remove feature switch (given..when) to if..elsif..else
 

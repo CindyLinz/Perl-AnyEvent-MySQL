@@ -748,7 +748,7 @@ sub do_auth {
             0
         ), 4); # client_flags
         put_num($packet, 0x1000000, 4); # max_packet_size
-        $packet .= $server_lang; # charset_number
+        put_num($packet, $server_lang, 1); # charset_number
         $packet .= "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"; # filler
         put_zstr($packet, $username); # username
         if( $password eq '' ) {

@@ -10,11 +10,11 @@ AnyEvent::MySQL - Pure Perl AnyEvent socket implementation of MySQL client
 
 =head1 VERSION
 
-Version 1.1.4
+Version 1.1.5
 
 =cut
 
-our $VERSION = '1.001004';
+our $VERSION = '1.001005';
 
 use AnyEvent::MySQL::Imp;
 
@@ -548,7 +548,7 @@ sub _process_task {
 
     $dbh->{_}[FALLBACKi] = sub {
         undef $dbh->{_}[FALLBACKi];
-        if( $dbh->{_}[TXN_STATEi]==NO_TXN && $task->[3]<5 ) {
+        if( $dbh->{_}[TXN_STATEi]==NO_TXN && $task->[3] && $task->[3]<5 ) {
             ++$task->[3];
             warn "redo the task later.. ($task->[3])";
             unshift @{$dbh->{_}[TASKi]}, $task;
@@ -790,9 +790,11 @@ sub selectall_arrayref {
     }, $cb]);
 }
 
+
 =head2 $dbh->selectall_hashref($statement, [$key_field|\@key_field], [\%attr, [@bind_values,]] $cb->($hash_ref))
 
 =cut
+
 sub selectall_hashref {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my($dbh, $statement, $key_field) = splice @_, 0, 3;
@@ -1116,6 +1118,33 @@ sub _rollback {
         };
         $next_act->();
     });
+}
+
+=head2 $dbh->ping_resource(sub {my $alive = shift;});
+
+=cut
+
+sub ping_resource {
+    my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
+    my ($dbh) = @_;
+
+    use Data::Dumper;
+
+    _push_task($dbh, [TXN_TASK, sub {
+        my $next_act = shift;
+        AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_PING);
+        AnyEvent::MySQL::Imp::recv_response($dbh->{_}[HDi], sub {
+            eval {
+                if ($_[0]==AnyEvent::MySQL::Imp::RES_OK) {
+                    $cb->(1);
+                }
+                else {
+                    $cb->(0);
+                }
+            };
+            $next_act->();
+        });
+    }, $cb]);
 }
 
 package AnyEvent::MySQL::st;

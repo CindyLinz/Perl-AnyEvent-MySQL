@@ -1520,9 +1520,6 @@ L<http://search.cpan.org/dist/AnyEvent-MySQL/>
 =back
 
 
-=head1 ACKNOWLEDGEMENTS
-
-
 =head1 LICENSE AND COPYRIGHT
 
 Copyright 2011-2014 Cindy Wang (CindyLinz).

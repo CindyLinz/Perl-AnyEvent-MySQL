@@ -14,7 +14,7 @@ Version 1.1.5
 
 =cut
 
-our $VERSION = '1.001004';
+our $VERSION = '1.001005';
 
 use AnyEvent::MySQL::Imp;
 

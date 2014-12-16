@@ -548,7 +548,7 @@ sub _process_task {
 
     $dbh->{_}[FALLBACKi] = sub {
         undef $dbh->{_}[FALLBACKi];
-        if( $dbh->{_}[TXN_STATEi]==NO_TXN && $task->[3] && $task->[3]<5 ) {
+        if( $dbh->{_}[TXN_STATEi]==NO_TXN && $task->[3]<5 ) {
             ++$task->[3];
             warn "redo the task later.. ($task->[3])";
             unshift @{$dbh->{_}[TASKi]}, $task;
@@ -730,7 +730,7 @@ sub _do {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 
     if( $rev_dir ) {
         _unshift_task(@args);
@@ -787,7 +787,7 @@ sub selectall_arrayref {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 
@@ -864,7 +864,7 @@ sub selectall_hashref {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 =head2 $dbh->selectcol_arrayref($statement, [\%attr, [@bind_values,]] $cb->($ary_ref))
@@ -899,7 +899,7 @@ sub selectcol_arrayref {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 =head2 $dbh->selectrow_array($statement, [\%attr, [@bind_values,]], $cb->(@row_ary))
@@ -928,7 +928,7 @@ sub selectrow_array {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 =head2 $dbh->selectrow_arrayref($statement, [\%attr, [@bind_values,]], $cb->($ary_ref))
@@ -957,7 +957,7 @@ sub selectrow_arrayref {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 =head2 $dbh->selectrow_hashref($statement, [\%attr, [@bind_values,]], $cb->($hash_ref))
@@ -995,7 +995,7 @@ sub selectrow_hashref {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 =head2 $sth = $dbh->prepare($statement, [$cb->($sth)])
@@ -1046,7 +1046,7 @@ sub begin_work {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 =head2 $dbh->commit([$cb->($rv)])
@@ -1078,7 +1078,7 @@ sub commit {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 =head2 $dbh->rollback([$cb->($rv)])
@@ -1095,7 +1095,7 @@ sub rollback {
             $dbh->{_}[TXN_STATEi] = NO_TXN if( $_[0] );
             &$cb;
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 sub _rollback {
     my($dbh, $next_act, $cb) = @_;
@@ -1120,15 +1120,13 @@ sub _rollback {
     });
 }
 
-=head2 $dbh->ping_resource(sub {my $alive = shift;});
+=head2 $dbh->ping(sub {my $alive = shift;});
 
 =cut
 
-sub ping_resource {
+sub ping {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my ($dbh) = @_;
-
-    use Data::Dumper;
 
     _push_task($dbh, [TXN_TASK, sub {
         my $next_act = shift;
@@ -1144,7 +1142,7 @@ sub ping_resource {
             };
             $next_act->();
         });
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 package AnyEvent::MySQL::st;
@@ -1236,7 +1234,7 @@ sub execute {
                 }
             });
         }
-    }, $cb]);
+    }, $cb, 0]);
 }
 
 package AnyEvent::MySQL::ft;
@@ -1535,6 +1533,9 @@ by the Free Software Foundation; or the Artistic License.
 
 See http://dev.perl.org/licenses/ for more information.
 
+=head1 CONTRIBUTOR
+
+Dmitriy Shamatrin (justnoxx@github)
 
 =cut
 

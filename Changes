@@ -1,5 +1,9 @@
 Revision history for AnyEvent-MySQL
 
+1.1.5   2014.12.17
+        Add 'ping' command. Fix a warning on command retry.
+        Patched by Dmitriy Shamatrin (justnoxx@github)
+
 1.1.4   2014.12.9
         Fix a bug (client default charset field) on handshake protocol.
         Thanks to nsnake@github for reporting.

@@ -711,7 +711,7 @@ sub _do {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my($rev_dir, $dbh, $statement, $attr, @bind_values) = @_;
 
-    if( $dbh->{_}[ATTRi]{ReadOnly} && $statement !~ /^\s*(?:show|select)\s*/i ){
+    if( $dbh->{_}[ATTRi]{ReadOnly} && $statement !~ /^\s*(?:show|select)/i ){
         _report_error($dbh, 'do', 1227, 'unable to perform write queries on a ReadOnly handle');
         $cb->();
         return;

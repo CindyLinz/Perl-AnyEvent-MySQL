@@ -711,6 +711,12 @@ sub _do {
     my $cb = ref($_[-1]) eq 'CODE' ? pop : \&AnyEvent::MySQL::_empty_cb;
     my($rev_dir, $dbh, $statement, $attr, @bind_values) = @_;
 
+    if( $dbh->{_}[ATTRi]{ReadOnly} && $statement !~ /^\s*(?:show|select)\s*/i ){
+        _report_error($dbh, 'do', 1227, 'unable to perform write queries on a ReadOnly handle');
+        $cb->();
+        return;
+    }
+
     my @args = ($dbh, [TXN_TASK, sub {
         my $next_act = shift;
         AnyEvent::MySQL::Imp::send_packet($dbh->{_}[HDi], 0, AnyEvent::MySQL::Imp::COM_QUERY, _text_prepare($statement, @bind_values));

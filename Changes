@@ -1,5 +1,8 @@
 Revision history for AnyEvent-MySQL
 
+1.1.6   2015.9.25
+        Add 'ReadOnly' option on DB handles by clking (clking@github)
+
 1.1.5   2014.12.17
         Add 'ping' command. Fix a warning on command retry.
         Patched by Dmitriy Shamatrin (justnoxx@github)

@@ -4,7 +4,7 @@ AnyEvent::MySQL - Pure Perl AnyEvent socket implementation of MySQL client
 
 # VERSION
 
-Version 1.1.5
+Version 1.1.6
 
 # SYNOPSIS
 
@@ -334,6 +334,10 @@ $dbh->do("update t1 set b=b+1", {}, sub {
 
 $end5->recv;
 
+my $readonly_dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=3306", "ptest", "pass", { ReadOnly => 1 }, sub {
+  # ... we can only use "select" and "show" command on this handle
+});
+
 $end->recv;
 ```
 
@@ -451,7 +455,7 @@ You can also look for information at:
 
 # LICENSE AND COPYRIGHT
 
-Copyright 2011-2014 Cindy Wang (CindyLinz).
+Copyright 2011-2015 Cindy Wang (CindyLinz).
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of either: the GNU General Public License as published
@@ -461,4 +465,6 @@ See http://dev.perl.org/licenses/ for more information.
 
 # CONTRIBUTOR
 
-Dmitriy Shamatrin (justnoxx@github)
+[Dmitriy Shamatrin (justnoxx@github)](https://github.com/justnoxx/)
+
+[clking (clking@github)](https://github.com/clking)

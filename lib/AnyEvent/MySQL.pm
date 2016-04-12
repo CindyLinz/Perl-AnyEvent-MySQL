@@ -14,7 +14,7 @@ Version 1.1.6
 
 =cut
 
-our $VERSION = '1.001006';
+our $VERSION = '1.001007';
 
 use AnyEvent::MySQL::Imp;
 
@@ -404,6 +404,7 @@ use constant {
     ATTRi => 1,
     HDi => 2,
     CONNi => 9,
+    ON_CONNi => 11,
 
     CONN_STATEi => 3,
     TXN_STATEi => 4,
@@ -448,7 +449,7 @@ sub _reconnect {
 
 sub _connect {
     my $dbh = shift;
-    my $cb = shift || \&AnyEvent::MySQL::_empty_cb;
+    my $cb = $dbh->{_}[ON_CONNi] || \&AnyEvent::MySQL::_empty_cb;
     $dbh->{_}[CONN_STATEi] = BUSY_CONN;
 
     my $param = $dbh->{Name};
@@ -524,7 +525,7 @@ sub _connect {
                 warn "MySQL auth error: $err_num_and_msg  retry later.";
                 undef $wdbh->{_}[HDi];
                 undef $wdbh->{_}[CONNi];
-                _reconnect($wdbh, $cb) if $wdbh;
+                _reconnect($wdbh) if $wdbh;
             }
         });
     });
@@ -682,8 +683,9 @@ sub new {
     $dbh->{_}[CONN_STATEi] = BUSY_CONN;
     $dbh->{_}[TXN_STATEi] = NO_TXN;
     $dbh->{_}[TASKi] = [];
+    $dbh->{_}[ON_CONNi] = $cb;
 
-    _connect($dbh, $cb);
+    _connect($dbh);
 
     return $dbh;
 }

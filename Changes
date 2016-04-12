@@ -1,5 +1,9 @@
 Revision history for AnyEvent-MySQL
 
+1.1.7   2016.4.12
+        Memorize the callback on AnyEvent::MySQL->new, and use it after
+        each successful reconnect.
+
 1.1.6   2015.9.25
         Add 'ReadOnly' option on DB handles by clking (clking@github)
 

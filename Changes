@@ -1,5 +1,8 @@
 Revision history for AnyEvent-MySQL
 
+1.2.1   2017.6.15
+        fix document error.
+
 1.2.0   2017.6.15
         function changed, bump version to 1.2
         fix document error.

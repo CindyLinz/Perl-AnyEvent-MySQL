@@ -4,6 +4,8 @@ use 5.006;
 use strict;
 use warnings;
 
+=encoding utf8
+
 =head1 NAME
 
 AnyEvent::MySQL - Pure Perl AnyEvent socket implementation of MySQL client
@@ -14,7 +16,7 @@ Version 1.1.6
 
 =cut
 
-our $VERSION = '1.001008';
+our $VERSION = '1.002000';
 
 use AnyEvent::MySQL::Imp;
 
@@ -1503,7 +1505,9 @@ Cindy Wang (CindyLinz)
 
 =head1 CONTRIBUTOR
 
-Chia-liang Kao (高嘉良) L<clkao@cpan.org>
+Dmitriy Shamatrin L<justnoxx@github|https://github.com/justnoxx>
+
+clking L<clking@github|https://github.com/clking>
 
 =head1 BUGS
 
@@ -1545,12 +1549,6 @@ under the terms of either: the GNU General Public License as published
 by the Free Software Foundation; or the Artistic License.
 
 See http://dev.perl.org/licenses/ for more information.
-
-=head1 CONTRIBUTOR
-
-Dmitriy Shamatrin (justnoxx@github)
-
-clking (clking@github)
 
 =cut
 

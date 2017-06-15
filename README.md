@@ -431,7 +431,9 @@ Cindy Wang (CindyLinz)
 
 # CONTRIBUTOR
 
-Chia-liang Kao (高嘉良) [clkao@cpan.org](https://metacpan.org/pod/clkao@cpan.org)
+Dmitriy Shamatrin [justnoxx@github](https://github.com/justnoxx)
+
+clking [clking@github](https://github.com/clking)
 
 # BUGS
 
@@ -464,17 +466,3 @@ under the terms of either: the GNU General Public License as published
 by the Free Software Foundation; or the Artistic License.
 
 See http://dev.perl.org/licenses/ for more information.
-
-# CONTRIBUTOR
-
-Dmitriy Shamatrin (justnoxx@github)
-
-clking (clking@github)
-
-# POD ERRORS
-
-Hey! **The above document had some coding errors, which are explained below:**
-
-- Around line 1506:
-
-    Non-ASCII character seen before =encoding in '(高嘉良)'. Assuming UTF-8

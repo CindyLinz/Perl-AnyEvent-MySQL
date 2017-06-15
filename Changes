@@ -1,5 +1,8 @@
 Revision history for AnyEvent-MySQL
 
+1.1.8   2017.6.15
+        allow readonly handles to SET NAMES (by clkao@cpan.org)
+
 1.1.7   2016.4.12
         Memorize the callback on AnyEvent::MySQL->new, and use it after
         each successful reconnect.

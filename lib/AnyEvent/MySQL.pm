@@ -14,7 +14,7 @@ Version 1.1.6
 
 =cut
 
-our $VERSION = '1.001007';
+our $VERSION = '1.001008';
 
 use AnyEvent::MySQL::Imp;
 
@@ -347,7 +347,7 @@ Please read the test.pl file as a usage example. >w<
     $end5->recv;
 
     my $readonly_dbh = AnyEvent::MySQL->connect("DBI:mysql:database=test;host=127.0.0.1;port=3306", "ptest", "pass", { ReadOnly => 1 }, sub {
-      # ... we can only use "select" and "show" command on this handle
+      # ... we can only use "select" and "show" and "set names" command on this handle
     });
 
     $end->recv;
@@ -1500,6 +1500,10 @@ sub fetchcol_arrayref {
 =head1 AUTHOR
 
 Cindy Wang (CindyLinz)
+
+=head1 CONTRIBUTOR
+
+Chia-liang Kao (高嘉良) L<clkao@cpan.org>
 
 =head1 BUGS
 
